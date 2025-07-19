@@ -1,0 +1,27 @@
+🚨 Project Escalation Notification
+
+Project: {{ project.code }} - {{ project.name }}
+Phase: {{ responsibility.project_status.get_phase_display }}
+Status Date: {{ responsibility.project_status.status_date }}
+
+Responsibility: {{ responsibility.title }}
+Status: {{ responsibility.get_status_display }}
+Needs Escalation: {{ responsibility.needs_escalation }}
+
+Responsible: {{ responsibility.responsible.get_full_name|default:responsibility.responsible.username }}
+{% if responsibility.deputy %}
+Deputy: {{ responsibility.deputy.get_full_name|default:responsibility.deputy.username }}
+{% endif %}
+
+Last Updated: {{ responsibility.last_updated }}
+
+Reason for Escalation:
+{{ reason }}
+
+🔗 View the project status here:
+{{ link }}
+
+---
+
+This is an automated message from the Project Status System.
+Please do not reply to this email.

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Project Escalation Notification</title>
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f9f9f9; padding: 20px;">
+    <div style="max-width: 600px; margin: auto; background-color: #fff; padding: 20px; border-radius: 10px;">
+        <h2 style="color: #d9534f;">🚨 Project Escalation: {{ project.name }}</h2>
+        <p><strong>Project Code:</strong> {{ project.code }}</p>
+        <p><strong>Phase:</strong> {{ responsibility.project_status.get_phase_display }}</p>
+        <p><strong>Status Date:</strong> {{ responsibility.project_status.status_date }}</p>
+
+        <hr>
+
+        <p><strong>Responsibility:</strong> {{ responsibility.title }}</p>
+        <p>
+            <strong>Status:</strong> 
+            <span style="color: 
+                {% if responsibility.status == 'R' %}red
+                {% elif responsibility.status == 'Y' %}orange
+                {% else %}green
+                {% endif %};
+            font-weight: bold;">
+                {{ responsibility.get_status_display }}
+            </span>
+        </p>
+        <p><strong>Needs Escalation:</strong> {{ responsibility.needs_escalation }}</p>
+
+        <p><strong>Responsible:</strong> {{ responsibility.responsible.get_full_name|default:responsibility.responsible.username }}</p>
+        {% if responsibility.deputy %}
+        <p><strong>Deputy:</strong> {{ responsibility.deputy.get_full_name|default:responsibility.deputy.username }}</p>
+        {% endif %}
+        <p><strong>Last Updated:</strong> {{ responsibility.last_updated }}</p>
+
+        <hr>
+
+        <p><strong>Reason for Escalation:</strong><br>{{ reason }}</p>
+
+        <p style="margin-top: 20px;">
+            🔗 <a href="{{ link }}" style="color: #337ab7;">Click here to view the project status</a>
+        </p>
+
+        <hr style="margin-top: 40px;">
+
+        <footer style="font-size: 12px; color: #666;">
+            This is an automated message from the <strong>Project Status System</strong>.<br>
+            Please do not reply to this email.
+        </footer>
+    </div>
+</body>
+</html>
