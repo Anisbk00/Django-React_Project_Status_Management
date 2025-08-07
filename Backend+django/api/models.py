@@ -120,3 +120,21 @@ class Escalation(models.Model):
         self.resolved_at = timezone.now()
         self.resolved_by = user
         self.save()
+
+class Notification(models.Model):
+    NOTIFICATION_TYPES = [
+        ('ESCALATION', 'Escalation'),
+        ('RESP_UPDATE', 'Responsibility Update'),
+        ('STATUS_UPDATE', 'Status Update'),
+        ('SYSTEM', 'System'),
+    ]
+    
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    message = models.TextField()
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    related_link = models.CharField(max_length=200, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"{self.get_notification_type_display()} - {self.user.username}"
