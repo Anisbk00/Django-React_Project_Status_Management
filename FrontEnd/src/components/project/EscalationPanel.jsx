@@ -1,6 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState } from 'react';
-import { ExclamationCircleIcon, CheckCircleIcon } from '@heroicons/react/outline';
+import { ExclamationCircleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { triggerEscalation, resolveEscalation } from '../../api/escalations';
 import Alert from '../ui/Alert';
 import Button from '../ui/Button';

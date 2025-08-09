@@ -26,6 +26,7 @@ class UserSerializer(serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     manager_details = UserSerializer(source='manager', read_only=True)
     progress = serializers.ReadOnlyField()
+    phase_display = serializers.CharField(source='get_current_phase_display', read_only=True)
     
     class Meta:
         model = Project

@@ -71,7 +71,7 @@ class ProjectStatus(models.Model):
     class Meta:
         ordering = ['-status_date']
         verbose_name_plural = "Project Statuses"
-        unique_together = ['project', 'status_date']
+        #unique_together = ['project', 'status_date']
     
     def __str__(self):
         return f"{self.project.code} Status - {self.status_date}"

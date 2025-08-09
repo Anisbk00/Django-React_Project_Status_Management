@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DocumentTextIcon, FlagIcon } from '@heroicons/react/outline';
+import { CheckCircleIcon, DocumentTextIcon, FlagIcon } from '@heroicons/react/24/outline';
 
 const StatusSavePanel = ({ onSave, isSaving, isBaseline, isFinal }) => {
   const saveOptions = [

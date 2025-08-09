@@ -1,5 +1,6 @@
 import StatusBadge from '../ui/StatusBadge';
-import { ArrowLeftIcon } from '@heroicons/react/outline';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+
 
 const ProjectHeader = ({ project, status, onBack }) => {
   return (

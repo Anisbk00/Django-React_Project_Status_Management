@@ -1,8 +1,18 @@
+/* eslint-disable react-refresh/only-export-components */
 /* eslint-disable no-unused-vars */
 import { createContext, useContext, useState, useEffect } from 'react';
 import { login as apiLogin, refreshToken as apiRefreshToken } from '../api/auth';
 
 const AuthContext = createContext();
+
+const safeJSONParse = (value) => {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch (e) {
+    console.error('Invalid JSON in localStorage:', e);
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -10,11 +20,16 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
+      setLoading(true);
       const token = localStorage.getItem('access_token');
-      const userData = localStorage.getItem('user');
+      const userRaw = localStorage.getItem('user');
 
-      if (token && userData) {
-        setUser(JSON.parse(userData));
+      if (token && userRaw && userRaw !== 'undefined') {
+        try {
+          setUser(JSON.parse(userRaw));
+        } catch {
+          localStorage.removeItem('user');
+        }
       }
       setLoading(false);
     };
@@ -23,12 +38,22 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (username, password) => {
-    const response = await apiLogin(username, password);
-    localStorage.setItem('access_token', response.access);
-    localStorage.setItem('refresh_token', response.refresh);
-    localStorage.setItem('user', JSON.stringify(response.user));
-    setUser(response.user);
-    return response;
+    const tokenResponse = await apiLogin(username, password);
+
+    const userResponse = await fetch('http://localhost:8000/api/users/me/', {
+      headers: { Authorization: `Bearer ${tokenResponse.access}` },
+    });
+
+    if (!userResponse.ok) throw new Error('User fetch failed');
+
+    const user = await userResponse.json();
+
+    localStorage.setItem('access_token', tokenResponse.access);
+    localStorage.setItem('refresh_token', tokenResponse.refresh);
+    localStorage.setItem('user', JSON.stringify(user));
+
+    setUser(user);
+    return { ...tokenResponse, user };
   };
 
   const logout = () => {
@@ -59,5 +84,6 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
+export const useAuth = () => useContext(AuthContext);
 
 export { AuthContext };

@@ -1,5 +1,5 @@
 import ResponsibilityItem from './ResponsibilityItem';
-import { PlusIcon } from '@heroicons/react/outline';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import { createResponsibility } from '../../api/responsibilities';
 
 const ResponsibilityList = ({ 

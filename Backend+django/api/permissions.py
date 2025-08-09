@@ -9,10 +9,14 @@ class IsResponsibleOrDeputy(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         user = request.user
 
-        if hasattr(obj, 'responsible') and hasattr(obj, 'deputy'):
+        # For responsibility instances
+        if isinstance(obj, Responsibility):
             return user in [obj.responsible, obj.deputy]
 
-        if hasattr(obj, 'project'):
+        # For project status instances
+        from .models import ProjectStatus
+        if hasattr(obj, 'project_status') or hasattr(obj, 'statuses'):
+            # obj is ProjectStatus
             return Responsibility.objects.filter(
                 project_status=obj,
                 responsible=user

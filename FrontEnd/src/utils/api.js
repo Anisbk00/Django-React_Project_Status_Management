@@ -29,11 +29,14 @@ api.interceptors.response.use(
                         refresh
                     });
                     localStorage.setItem('access_token',response.data.access);
-                    api.defaults.headers.common['Authprization']=`Bearer ${response.data.access}`;
+                    api.defaults.headers.common['Authorization'] = `Bearer ${response.data.access}`;
                     return api(originalRequest);
                 }catch(err){
                     console.error('Resfresh Token failed',err);
-                    //handle logout 
+                    //handel logout
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('refresh_token');
+                    window.location.href = '/login';
                 }
             }
         }

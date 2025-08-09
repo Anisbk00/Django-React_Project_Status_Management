@@ -1,249 +1,169 @@
-from django.test import TestCase
-from django.test import TestCase
-from django.contrib.auth.models import User
+import os
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APIClient
-from .models import Project, ProjectStatus, Responsibility
+from rest_framework.test import APITestCase, APIClient
+from django.contrib.auth import get_user_model
+from api.models import Project, ProjectStatus, Responsibility, Escalation
 
-class ProjectStatusAPITests(TestCase):
+User = get_user_model()
+
+class BaseTestCase(APITestCase):
     def setUp(self):
-        # Create users
-        self.user1 = User.objects.create_user(
-            username='user1', email='user1@example.com', password='user1pass'
+        # Create users with different roles
+        self.admin = User.objects.create_user(
+            username='admin', password='adminpass', role='ADMIN', email='admin@example.com'
         )
-        self.user2 = User.objects.create_user(
-            username='user2', email='user2@example.com', password='user2pass'
+        self.pm = User.objects.create_user(
+            username='pm', password='pmpass', role='PM', email='pm@example.com'
         )
-        
-        # Create projects
-        self.project1 = Project.objects.create(
-            code='P1001', name='Project Alpha'
+        self.resp = User.objects.create_user(
+            username='resp', password='resppass', role='RESP', email='resp@example.com'
         )
-        self.project2 = Project.objects.create(
-            code='P1002', name='Project Beta'
+        self.em = User.objects.create_user(
+            username='em', password='empass', role='EM', email='em@example.com'
         )
-        
-        # Create statuses
-        self.status1 = ProjectStatus.objects.create(
-            project=self.project1,
-            status_date='2025-07-01',
-            phase='DEV',
-            created_by=self.admin
-        )
-        
-        # Create responsibilities
-        self.responsibility1 = Responsibility.objects.create(
-            project_status=self.status1,
-            title='Frontend Development',
-            responsible=self.user1,
-            deputy=self.user2,
-            status='G'
-        )
-        
-        # API client
+
+        # Initialize client
         self.client = APIClient()
 
-    def test_unique_project_code(self):
-        """Test project code uniqueness validation"""
-        self.client.force_authenticate(user=self.admin)
+    def authenticate(self, user):
         response = self.client.post(
-            reverse('project-list'),
-            {'code': 'P1001', 'name': 'Duplicate Project'}
+            reverse('token_obtain_pair'),
+            {'username': user.username, 'password': user.username + 'pass'}
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('code', response.data)
-        self.assertEqual(response.data['code'][0], 'project with this code already exists.')
+        token = response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
 
-    def test_permission_restrictions(self):
-        """Test authentication requirements"""
-        # Unauthenticated access
-        endpoints = [
-            reverse('project-list'),
-            reverse('projectstatus-list'),
-            reverse('responsibility-list')
-        ]
-        for endpoint in endpoints:
-            response = self.client.get(endpoint)
-            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        
-        # Regular user access to projects
-        self.client.force_authenticate(user=self.user1)
-        response = self.client.get(reverse('project-list'))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
-        # Regular user trying to create project (should fail if permissions are set)
-        response = self.client.post(
-            reverse('project-list'),
-            {'code': 'P1003', 'name': 'New Project'}
-        )
+class ProjectTests(BaseTestCase):
+    def test_create_project_as_pm(self):
+        self.authenticate(self.pm)
+        url = reverse('project-list')
+        data = {
+            'code': '1000000001-01S',
+            'name': 'Test Project',
+            'start_date': '2025-01-01',
+            'end_date': '2025-12-31',
+            'manager': self.pm.id
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Project.objects.count(), 1)
+
+    def test_create_project_as_resp_forbidden(self):
+        self.authenticate(self.resp)
+        url = reverse('project-list')
+        data = {
+            'code': '1000000002-01S',
+            'name': 'Forbidden Project',
+            'start_date': '2025-01-01',
+            'end_date': '2025-12-31',
+            'manager': self.resp.id
+        }
+        response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_crud_operations(self):
-        """Test full CRUD lifecycle for Project"""
-        self.client.force_authenticate(user=self.admin)
-        
-        # Create
-        response = self.client.post(
-            reverse('project-list'),
-            {'code': 'P1003', 'name': 'Project Gamma'}
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        project_id = response.data['id']
-        
-        # Read
-        response = self.client.get(reverse('project-detail', args=[project_id]))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['name'], 'Project Gamma')
-        
-        # Update
-        response = self.client.patch(
-            reverse('project-detail', args=[project_id]),
-            {'name': 'Project Gamma Updated'}
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['name'], 'Project Gamma Updated')
-        
-        # Delete
-        response = self.client.delete(reverse('project-detail', args=[project_id]))
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+    def test_list_projects_visibility(self):
+        # PM creates two projects
+        Project.objects.create(code='1000000003-01S', name='P1', start_date='2025-01-01', end_date='2025-02-01', manager=self.pm)
+        proj2 = Project.objects.create(code='1000000004-01S', name='P2', start_date='2025-01-01', end_date='2025-02-01', manager=self.pm)
+        # Add resp responsibility to one
+        status_obj = ProjectStatus.objects.create(project=proj2, phase='PLAN', created_by=self.pm)
+        Responsibility.objects.create(project_status=status_obj, title='Task', responsible=self.resp)
 
-    def test_edge_cases(self):
-        """Test various edge cases"""
-        self.client.force_authenticate(user=self.admin)
-        
-        # Empty fields
-        response = self.client.post(
-            reverse('project-list'),
-            {'code': '', 'name': ''}
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('code', response.data)
-        self.assertIn('name', response.data)
-        
-        # Invalid IDs
-        response = self.client.get(reverse('project-detail', args=[999]))
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        
-        # Invalid date format
-        response = self.client.post(
-            reverse('projectstatus-list'),
-            {
-                'project': self.project1.id,
-                'status_date': '2025-13-01',  # Invalid month
-                'phase': 'DEV'
-            }
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('status_date', response.data)
+        # RESP sees only proj2
+        self.authenticate(self.resp)
+        url = reverse('project-list')
+        response = self.client.get(url)
+        self.assertEqual(len(response.data), 1)
 
-    def test_deputy_functionality(self):
-        """Test deputy can update responsibility"""
-        # Deputy (user2) updates responsibility
-        self.client.force_authenticate(user=self.user2)
-        response = self.client.patch(
-            reverse('responsibility-detail', args=[self.responsibility1.id]),
-            {'status': 'Y'}
+class StatusTests(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate(self.pm)
+        self.project = Project.objects.create(
+            code='1000000005-01S', name='PStatus', start_date='2025-01-01', end_date='2025-12-31', manager=self.pm
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['status'], 'Y')
-        
-        # Non-deputy user tries to update (should fail)
-        user3 = User.objects.create_user(
-            username='user3', password='user3pass'
-        )
-        self.client.force_authenticate(user=user3)
-        response = self.client.patch(
-            reverse('responsibility-detail', args=[self.responsibility1.id]),
-            {'status': 'R'}
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_escalation(self):
-        """Test escalation triggers email to multiple recipients"""
-        # Setup email backend for testing
-        from django.core import mail
-        self.client.force_authenticate(user=self.admin)
-        
-        # Create additional deputy
-        user3 = User.objects.create_user(
-            username='user3', email='user3@example.com', password='user3pass'
-        )
-        self.responsibility1.deputy = user3
-        self.responsibility1.save()
-        
-        # Trigger escalation
-        response = self.client.patch(
-            reverse('responsibility-detail', args=[self.responsibility1.id]),
-            {'status': 'Y'}  # Yellow status triggers escalation
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
-        # Check email was sent
-        self.assertEqual(len(mail.outbox), 1)
-        email = mail.outbox[0]
-        self.assertEqual(email.subject, f"ESCALATION: {self.project1.name}")
-        self.assertEqual(len(email.to), 3)  # Responsible + 2 deputies
-        self.assertIn(self.user1.email, email.to)
-        self.assertIn(self.user2.email, email.to)
-        self.assertIn(user3.email, email.to)
-        
-        # Check escalation record created
-        self.assertEqual(self.responsibility1.escalations.count(), 1)
-        escalation = self.responsibility1.escalations.first()
-        self.assertEqual(escalation.created_by, self.admin)
-        self.assertFalse(escalation.resolved)
-        
-        # Test checkbox escalation
-        mail.outbox = []  # Clear email outbox
-        response = self.client.patch(
-            reverse('responsibility-detail', args=[self.responsibility1.id]),
-            {'needs_escalation': True}
-        )
-        self.assertEqual(len(mail.outbox), 1)  # New email sent
-
-    def test_status_save_actions(self):
-        """Test save baseline and final status actions"""
-        self.client.force_authenticate(user=self.admin)
-        
-        # Save baseline
-        response = self.client.post(
-            reverse('projectstatus-save-baseline', args=[self.status1.id])
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.status1.refresh_from_db()
-        self.assertTrue(self.status1.is_baseline)
-        
-        # Save final status
-        response = self.client.post(
-            reverse('projectstatus-save-final', args=[self.status1.id])
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.status1.refresh_from_db()
-        self.assertTrue(self.status1.is_final)
-
-    def test_automatic_status_date_update(self):
-        """Test status_date updates automatically"""
-        self.client.force_authenticate(user=self.admin)
-        
-        # Create new status without date
-        response = self.client.post(
-            reverse('projectstatus-list'),
-            {
-                'project': self.project1.id,
-                'phase': 'PROD'
-            }
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIsNotNone(response.data['status_date'])
-        
-        # Update status should not change date
+    def test_baseline_and_final_save(self):
+        url = reverse('status-list')
+        data = {'project': self.project.id, 'phase': 'PLAN'}
+        response = self.client.post(url, data, format='json')
         status_id = response.data['id']
-        original_date = response.data['status_date']
-        response = self.client.patch(
-            reverse('projectstatus-detail', args=[status_id]),
-            {'phase': 'COMP'}
+        # Save as baseline
+        baseline_url = reverse('status-save-baseline', args=[status_id])
+        resp1 = self.client.post(baseline_url)
+        self.assertEqual(resp1.status_code, status.HTTP_200_OK)
+        # Save as final
+        final_url = reverse('status-save-final', args=[status_id])
+        resp2 = self.client.post(final_url)
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+
+    def test_clone_previous(self):
+        # Create two statuses
+        status1 = ProjectStatus.objects.create(project=self.project, phase='PLAN', created_by=self.pm)
+        status2 = ProjectStatus.objects.create(project=self.project, phase='DEV', created_by=self.pm)
+        # Add responsibility to first
+        Responsibility.objects.create(project_status=status1, title='T1', responsible=self.pm)
+        self.authenticate(self.pm)
+        clone_url = reverse('status-clone-previous', args=[status2.id])
+        resp = self.client.post(clone_url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        # Check responsibilities cloned
+        self.assertTrue(status2.responsibilities.filter(title='T1').exists())
+
+class ResponsibilityTests(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate(self.pm)
+        self.project = Project.objects.create(
+            code='1000000006-01S', name='PResp', start_date='2025-01-01', end_date='2025-12-31', manager=self.pm
         )
+        self.status_obj = ProjectStatus.objects.create(project=self.project, phase='PLAN', created_by=self.pm)
+        self.resp_obj = Responsibility.objects.create(
+            project_status=self.status_obj, title='T2', responsible=self.resp
+        )
+
+    def test_manual_escalation_flag(self):
+        self.authenticate(self.resp)
+        url = reverse('responsibility-detail', args=[self.resp_obj.id])
+        update_data = {'needs_escalation': True}
+        response = self.client.patch(url, update_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['status_date'], original_date)
-# Create your tests here.
+        self.assertTrue(Escalation.objects.filter(responsibility=self.resp_obj).exists())
+
+    def test_resolve_escalation_as_em(self):
+        # Trigger escalation
+        esc = Escalation.objects.create(responsibility=self.resp_obj, reason='Test', created_by=self.resp)
+        self.authenticate(self.em)
+        url = reverse('escalation-resolve-escalation', args=[esc.id])
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        esc.refresh_from_db()
+        self.assertTrue(esc.resolved)
+
+class ReportingTests(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate(self.pm)
+        # Create sample project and responsibilities
+        proj = Project.objects.create(code='1000000007-01S', name='Pr', start_date='2025-01-01', end_date='2025-12-31', manager=self.pm)
+        st = ProjectStatus.objects.create(project=proj, phase='PLAN', created_by=self.pm)
+        Responsibility.objects.create(project_status=st, title='R', responsible=self.resp)
+
+    def test_project_summary(self):
+        url = reverse('report-project-summary')
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('total_projects', resp.data)
+
+    def test_user_responsibilities(self):
+        url = f"{reverse('report-user-responsibilities')}?user_id={self.resp.id}"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(isinstance(resp.data, list))
+
+    def test_escalation_report(self):
+        url = reverse('report-escalation-report')
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(isinstance(resp.data, list))

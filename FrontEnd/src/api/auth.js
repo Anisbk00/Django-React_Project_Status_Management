@@ -1,21 +1,15 @@
-import axios from 'axios'
-import {API_BASE_URL} from  '../utils/api';
+import axios from 'axios';
 
-export const loginn = async(username,password)=>{
-    const response=await axios.post(`${API_BASE_URL}/token/`,{username,password});
+const API_URL = 'http://127.0.0.1:8000/api'; // change if needed
 
-    const userResponse=await axios.get(`${API_BASE_URL}/users/me/`,{
-        headers:{AUthorization:`Bearer ${response.data.access}`}
-    });
-
-    return {
-        access:response.data.success,
-        refresh: response.data.refresh,
-        user:userResponse.data
-    };
-
+// Login request
+export const login = async (username, password) => {
+  const response = await axios.post(`${API_URL}/token/`, { username, password });
+  return response.data; // { access, refresh, user }
 };
-export const refreshToken=async (refresh)=>{
-    const response =await axios.post(`${API_BASE_URL}/token/refresh/`,{refresh});
-    return response.data;
+
+// Refresh token request
+export const refreshToken = async (refresh) => {
+  const response = await axios.post(`${API_URL}/token/refresh/`, { refresh });
+  return response.data; // { access }
 };

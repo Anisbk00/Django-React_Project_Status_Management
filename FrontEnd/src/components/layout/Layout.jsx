@@ -1,12 +1,23 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import { useAuth } from '../../context/AuthContext';
 
 const Layout = () => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  if (!user) return null;
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    // If not loading and no user, redirect to login
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">

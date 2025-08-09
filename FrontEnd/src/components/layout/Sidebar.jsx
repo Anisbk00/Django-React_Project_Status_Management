@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  HomeIcon, 
-  ChartBarIcon, 
-  ClipboardListIcon, 
+import {
+  HomeIcon,
+  ChartBarIcon,
+  ClipboardDocumentListIcon,
   BellIcon,
   CogIcon,
   XMarkIcon,
@@ -16,7 +16,7 @@ const Sidebar = () => {
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: HomeIcon },
     { name: 'Projects', path: '/projects', icon: ChartBarIcon },
-    { name: 'Status Reports', path: '/status', icon: ClipboardListIcon },
+    { name: 'Status Reports', path: '/status', icon: ClipboardDocumentListIcon },
     { name: 'Notifications', path: '/notifications', icon: BellIcon },
     { name: 'Settings', path: '/settings', icon: CogIcon },
   ];
