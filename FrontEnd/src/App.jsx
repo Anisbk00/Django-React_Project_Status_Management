@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import ProjectStatusPage from './pages/ProjectStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function App() {
   return (
@@ -13,7 +14,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />

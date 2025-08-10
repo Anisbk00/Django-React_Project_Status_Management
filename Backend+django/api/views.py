@@ -11,6 +11,8 @@ from django_filters import rest_framework as filters
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
+import secrets
+from .models import PasswordResetToken
 
 from .models import CustomUser, Project, ProjectStatus, Responsibility, Escalation
 from .serializers import (
@@ -298,3 +300,56 @@ class ApiRootView(APIView):
             "admin": request.build_absolute_uri('/admin/'),
         }
         return Response(endpoints)
+    
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({'error': 'Email is required.'}, status=400)
+
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            return Response({'message': 'If the email exists, a reset link will be sent.'}, status=200)
+
+        # Create or update token
+        token = secrets.token_urlsafe(32)
+        PasswordResetToken.objects.update_or_create(user=user, defaults={'token': token})
+
+        reset_link = f'http://localhost:5173/reset-password?token={token}'
+
+        send_mail(
+            'Password Reset Request',
+            f'Click the link to reset your password:\n{reset_link}',
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+        )
+
+        return Response({'message': 'If the email exists, a reset link will be sent.'}, status=200)
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        token = request.data.get('token')
+        new_password = request.data.get('password')
+
+        if not token or not new_password:
+            return Response({'error': 'Token and new password are required.'}, status=400)
+
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            return Response({'error': 'Invalid or expired token.'}, status=400)
+
+        if reset_token.is_expired():
+            reset_token.delete()
+            return Response({'error': 'Token has expired.'}, status=400)
+
+        user = reset_token.user
+        user.set_password(new_password)
+        user.save()
+
+        reset_token.delete()
+
+        return Response({'message': 'Password reset successful.'}, status=200)

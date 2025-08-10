@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 import { useAuth } from '../context/AuthContext';
+import ForgotPasswordModal from '../components/auth/ForgotPasswordModal';
+
 
 const LoginPage = () => {
   const [error, setError] = useState('');

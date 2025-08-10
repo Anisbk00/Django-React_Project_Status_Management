@@ -4,7 +4,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from django.core.validators import RegexValidator
 from model_utils import FieldTracker
-
+from datetime import timedelta
 
 
 class CustomUser(AbstractUser):
@@ -138,3 +138,27 @@ class Notification(models.Model):
     
     def __str__(self):
         return f"{self.get_notification_type_display()} - {self.user.username}"
+    
+
+
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    token = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        # Token expires after 1 hour
+        return timezone.now() > self.created_at + timedelta(hours=1)
+    
+class PasswordResetToken(models.Model):
+    user = models.OneToOneField('CustomUser', on_delete=models.CASCADE, related_name='password_reset_token')
+    token = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        # Token expires after 1 day
+        expiration_time = self.created_at + timedelta(days=1)
+        return timezone.now() > expiration_time
+
+    def __str__(self):
+        return f"PasswordResetToken(user={self.user.email}, token={self.token})"
