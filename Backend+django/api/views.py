@@ -73,6 +73,15 @@ class ProjectViewSet(viewsets.ModelViewSet):
         latest_status = project.statuses.order_by('-status_date').first()
         serializer = ProjectStatusSerializer(latest_status)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='check-code')
+    def check_code(self, request):
+        code = request.query_params.get('code')
+        if not code:
+            return Response({'error': 'Code parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        exists = Project.objects.filter(code=code).exists()
+        return Response({'exists': exists})
 
 
 class ProjectStatusViewSet(viewsets.ModelViewSet):
@@ -275,31 +284,6 @@ class ReportingViewSet(viewsets.ViewSet):
             'project_code', 'responsibility_title', 'created_by_name'
         )
         return Response(list(escalations))
-
-
-class ApiRootView(APIView):
-    permission_classes = [AllowAny]
-    """
-    Return a JSON response listing all API endpoints.
-    """
-
-    def get(self, request, format=None):
-        # You can build a dictionary of your router URLs manually or dynamically
-        endpoints = {
-            "projects": request.build_absolute_uri('/api/projects/'),
-            "status": request.build_absolute_uri('/api/status/'),
-            "responsibilities": request.build_absolute_uri('/api/responsibilities/'),
-            "escalations": request.build_absolute_uri('/api/escalations/'),
-            "users": request.build_absolute_uri('/api/users/'),
-            "reports": request.build_absolute_uri('/api/reports/'),
-            "register": request.build_absolute_uri('/api/register/'),
-            "token_obtain_pair": request.build_absolute_uri('/api/token/'),
-            "token_refresh": request.build_absolute_uri('/api/token/refresh/'),
-            "swagger": request.build_absolute_uri('/swagger/'),
-            "redoc": request.build_absolute_uri('/redoc/'),
-            "admin": request.build_absolute_uri('/admin/'),
-        }
-        return Response(endpoints)
     
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]

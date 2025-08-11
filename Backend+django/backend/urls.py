@@ -5,7 +5,6 @@ from rest_framework import permissions
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
-from api.views import ApiRootView
 from api.views import PasswordResetRequestView, PasswordResetConfirmView
 
 from api.views import (
@@ -38,7 +37,6 @@ router.register(r'reports', ReportingViewSet, basename='report')
 
 
 urlpatterns = [
-    path("", ApiRootView.as_view(), name="api-root"),
     path('admin/', admin.site.urls),
     path('api/password-reset-request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
     path('api/password-reset-confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
