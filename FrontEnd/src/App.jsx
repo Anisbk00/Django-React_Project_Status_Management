@@ -7,6 +7,8 @@ import LoginPage from './pages/LoginPage';
 import ProjectStatusPage from './pages/ProjectStatusPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import NewProjectPage from './pages/NewProjectPage';
+
 
 function App() {
   return (
@@ -18,6 +20,7 @@ function App() {
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/projects/new" element={<NewProjectPage />} />
               <Route path="/projects/:projectId" element={<ProjectStatusPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Route>

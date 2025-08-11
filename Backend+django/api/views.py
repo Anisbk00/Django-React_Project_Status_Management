@@ -57,7 +57,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProjectSerializer
     permission_classes = [permissions.IsAuthenticated, IsProjectManager]
     filterset_fields = ['code', 'name', 'current_phase']
-
+    
     def get_queryset(self):
         user = self.request.user
         if user.role in ['PM', 'ADMIN']:

@@ -2,11 +2,12 @@ import api from '../utils/api';
 
 export const fetchProjects = async () => {
   const response = await api.get('/projects/');
-  console.log(response)
+  //console.log(response)
   // Handle paginated or direct array response
   if (response.data?.results) {
     return response.data.results;
   }
+  console.log("RAW PROJECT DATA:", response.data?.results || response.data);
   return Array.isArray(response.data) ? response.data : [];
 };
 

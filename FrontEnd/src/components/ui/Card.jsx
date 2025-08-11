@@ -15,33 +15,32 @@ const Card = ({
   const paddingClasses = {
     none: '',
     tight: 'p-2',
-    normal: 'p-4 md:p-6',
-    loose: 'p-6 md:p-8',
+    normal: 'p-5 md:p-6',
+    loose: 'p-7 md:p-8',
   };
   
   return (
     <div 
       className={`
-        rounded-lg bg-white shadow-sm 
+        rounded-2xl bg-white shadow-sm
         ${border ? 'border border-gray-200' : ''}
-        ${hoverEffect ? 'transition-all duration-200 hover:shadow-md hover:border-gray-300' : ''}
+        ${hoverEffect ? 'transition-all duration-300 hover:shadow-lg hover:scale-[1.02]' : ''}
         ${className}
       `}
     >
       {(title || subtitle || headerActions) && (
         <div className={`
-          px-4 py-3 border-b border-gray-200 
-          ${padding === 'tight' ? 'py-2 px-3' : padding === 'loose' ? 'py-4 px-6' : 'py-3 px-4'}
-          flex items-center justify-between gap-3
+          flex items-center justify-between gap-4 border-b border-gray-200
+          ${padding === 'tight' ? 'py-2 px-3' : padding === 'loose' ? 'py-5 px-6' : 'py-4 px-5'}
         `}>
           <div>
             {title && (
-              <h3 className="text-lg font-medium text-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900 leading-tight">
                 {title}
               </h3>
             )}
             {subtitle && (
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-gray-500 leading-snug">
                 {subtitle}
               </p>
             )}
@@ -60,8 +59,8 @@ const Card = ({
       
       {footer && (
         <div className={`
-          px-4 py-3 bg-gray-50 border-t border-gray-200 rounded-b-lg
-          ${padding === 'tight' ? 'py-2 px-3' : padding === 'loose' ? 'py-4 px-6' : 'py-3 px-4'}
+          bg-gray-50 border-t border-gray-200 rounded-b-2xl
+          ${padding === 'tight' ? 'py-2 px-3' : padding === 'loose' ? 'py-5 px-6' : 'py-4 px-5'}
         `}>
           {footer}
         </div>
@@ -85,6 +84,7 @@ Card.propTypes = {
 Card.defaultProps = {
   padding: 'normal',
   border: true,
+  hoverEffect: false,
 };
 
 export default Card;

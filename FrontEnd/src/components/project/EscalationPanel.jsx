@@ -5,17 +5,23 @@ import { triggerEscalation, resolveEscalation } from '../../api/escalations';
 import Alert from '../ui/Alert';
 import Button from '../ui/Button';
 
-const EscalationPanel = ({ responsibilities, projectId, statusId }) => {
+const EscalationPanel = ({
+  responsibilities = [],
+  projectId,
+  statusId
+}) => {
   const [activeEscalation, setActiveEscalation] = useState(null);
   const [escalationReason, setEscalationReason] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Find escalated responsibilities
-  const escalatedResponsibilities = responsibilities.filter(
-    resp => resp.needs_escalation || resp.status === 'Y' || resp.status === 'R'
-  );
+  // Make sure responsibilities is an array before filtering
+  const escalatedResponsibilities = Array.isArray(responsibilities)
+    ? responsibilities.filter(
+        resp => resp.needs_escalation || resp.status === 'Y' || resp.status === 'R'
+      )
+    : [];
 
   const handleTriggerEscalation = async () => {
     if (!escalationReason.trim()) {
@@ -26,15 +32,14 @@ const EscalationPanel = ({ responsibilities, projectId, statusId }) => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Trigger escalation for each escalated responsibility
+
       for (const resp of escalatedResponsibilities) {
         await triggerEscalation({
           responsibility: resp.id,
           reason: escalationReason
         });
       }
-      
+
       setSuccess('Escalation triggered successfully! Notifications sent to all responsible parties.');
       setEscalationReason('');
     } catch (err) {
@@ -70,11 +75,11 @@ const EscalationPanel = ({ responsibilities, projectId, statusId }) => {
           <h2 className="text-lg font-medium text-gray-800">Escalation Management</h2>
         </div>
       </div>
-      
+
       <div className="p-6 space-y-4">
         {error && <Alert type="error" message={error} />}
         {success && <Alert type="success" message={success} />}
-        
+
         {escalatedResponsibilities.length > 0 ? (
           <div className="space-y-4">
             <div>
@@ -105,7 +110,7 @@ const EscalationPanel = ({ responsibilities, projectId, statusId }) => {
                 ))}
               </ul>
             </div>
-            
+
             <div>
               <label htmlFor="escalation-reason" className="block text-sm font-medium text-gray-700 mb-1">
                 Escalation Reason
@@ -119,7 +124,7 @@ const EscalationPanel = ({ responsibilities, projectId, statusId }) => {
                 rows="3"
               />
             </div>
-            
+
             <div className="flex justify-end space-x-2">
               <Button
                 onClick={handleTriggerEscalation}
