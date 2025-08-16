@@ -225,6 +225,48 @@ class EscalationViewSet(viewsets.ModelViewSet):
         escalation = self.get_object()
         escalation.resolve(request.user)
         return Response({'status': 'escalation resolved'})
+    
+    @action(detail=False, methods=['get'])
+    def by_project(self, request):
+        """
+        GET /api/escalations/by_project/?project=<id_or_code>&resolved=true|false
+
+        - `project` may be the numeric PK (id) or the project.code string.
+        - `resolved` optional filter accepts true/false (or 1/0).
+        - Supports DRF pagination if configured.
+        """
+        project_q = request.query_params.get('project')
+        if not project_q:
+            return Response({"detail": "project query param required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = self.get_queryset()
+
+        # If numeric, treat as project id, otherwise treat as project.code
+        if str(project_q).isdigit():
+            qs = qs.filter(responsibility__project_status__project__id=project_q)
+        else:
+            qs = qs.filter(responsibility__project_status__project__code=project_q)
+
+        resolved = request.query_params.get('resolved')
+        if resolved is not None:
+            if str(resolved).lower() in ('true', '1'):
+                qs = qs.filter(resolved=True)
+            elif str(resolved).lower() in ('false', '0'):
+                qs = qs.filter(resolved=False)
+
+        # optional responsibility filter passthrough
+        resp = request.query_params.get('responsibility')
+        if resp:
+            qs = qs.filter(responsibility__id=resp)
+
+        # pagination-aware response
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
 
 
 class UserViewSet(viewsets.ModelViewSet):
