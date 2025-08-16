@@ -55,13 +55,24 @@ class EscalationFilter(filters.FilterSet):
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all().order_by('-created_at')
     serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated, IsProjectManager]
+    permission_classes = [permissions.IsAuthenticated,]
     filterset_fields = ['code', 'name', 'current_phase']
     
     def get_queryset(self):
         user = self.request.user
+        
         if user.role in ['PM', 'ADMIN']:
             return super().get_queryset()
+
+        if user.role == 'DEPUTY':
+            return Project.objects.filter(
+                statuses__responsibilities__deputy=user
+            ).distinct()
+
+        if user.role == 'RESP':
+            return Project.objects.filter(statuses__responsibilities__responsible=user).distinct()
+
+        # Fallback: show projects where the user is either responsible or deputy
         return Project.objects.filter(
             Q(statuses__responsibilities__responsible=user) |
             Q(statuses__responsibilities__deputy=user)
@@ -87,7 +98,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 class ProjectStatusViewSet(viewsets.ModelViewSet):
     queryset = ProjectStatus.objects.all().order_by('-status_date')
     serializer_class = ProjectStatusSerializer
-    permission_classes = [permissions.IsAuthenticated, IsResponsibleOrDeputy]
+    permission_classes = [permissions.IsAuthenticated,]
     filterset_fields = ['project', 'phase', 'is_baseline', 'is_final']
 
     def get_queryset(self):
@@ -164,7 +175,7 @@ class ProjectStatusViewSet(viewsets.ModelViewSet):
 class ResponsibilityViewSet(viewsets.ModelViewSet):
     queryset = Responsibility.objects.all()
     serializer_class = ResponsibilitySerializer
-    permission_classes = [permissions.IsAuthenticated, IsResponsibleOrDeputy]
+    permission_classes = [permissions.IsAuthenticated,]
     filterset_fields = ['project_status', 'status', 'needs_escalation']
 
     def perform_update(self, serializer):

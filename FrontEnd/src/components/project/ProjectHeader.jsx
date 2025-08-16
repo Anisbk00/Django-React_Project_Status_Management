@@ -4,8 +4,9 @@ import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 const ProjectHeader = ({ project, status, onBack }) => {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <div className="flex items-center mb-5">
+    <div className="bg-white rounded-xl shadow-md p-6 space-y-6">
+      {/* Top Header */}
+      <div className="flex items-center">
         <button
           onClick={onBack}
           className="flex items-center text-blue-600 hover:text-blue-800 font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
@@ -16,7 +17,9 @@ const ProjectHeader = ({ project, status, onBack }) => {
         </button>
 
         <div className="flex-1 ml-6">
-          <h1 className="text-3xl font-extrabold text-gray-900 truncate">{project.name}</h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 truncate">
+            {project.name}
+          </h1>
           <div className="flex items-center space-x-6 mt-1 text-gray-600 text-sm">
             <span>
               <span className="font-semibold">Project Code:</span> {project.code}
@@ -33,17 +36,23 @@ const ProjectHeader = ({ project, status, onBack }) => {
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mt-6 space-y-4 md:space-y-0">
+      {/* Project Meta */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
         <div className="space-y-1 text-gray-700 text-sm md:text-base">
           <p>
             <span className="font-semibold">Manager:</span>{' '}
             {project.manager_details
-              ? `${project.manager_details.first_name} ${project.manager_details.last_name}`
+              ? (project.manager_details.first_name || project.manager_details.username) +
+                (project.manager_details.last_name
+                  ? ` ${project.manager_details.last_name}`
+                  : '')
               : 'N/A'}
           </p>
           <p>
             <span className="font-semibold">Last Updated:</span>{' '}
-            {project.updated_at ? new Date(project.updated_at).toLocaleDateString() : '—'}
+            {project.updated_at
+              ? new Date(project.updated_at).toLocaleDateString()
+              : '—'}
           </p>
         </div>
 
@@ -51,6 +60,16 @@ const ProjectHeader = ({ project, status, onBack }) => {
           Start Date: {new Date(project.start_date).toLocaleDateString()}
         </div>
       </div>
+
+      {/* Description */}
+      {project.description && (
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <h3 className="text-gray-800 font-semibold mb-2">Description</h3>
+          <p className="text-gray-700 leading-relaxed whitespace-pre-line">
+            {project.description}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

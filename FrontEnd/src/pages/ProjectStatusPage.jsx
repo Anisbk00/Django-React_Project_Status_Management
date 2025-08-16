@@ -19,6 +19,7 @@ const ProjectStatusPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
   const [project, setProject] = useState(null);
   const [status, setStatus] = useState(null);
   const [statuses, setStatuses] = useState([]);
@@ -26,32 +27,32 @@ const ProjectStatusPage = () => {
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const loadProjectData = async () => {
+    try {
+      setLoading(true);
+      const [projectData, statusData, statusesData] = await Promise.all([
+        fetchProjectDetails(projectId),
+        fetchLatestStatus(projectId),
+        fetchProjectStatuses(projectId)
+      ]);
+      setProject(projectData);
+      setStatus(statusData);
+      setStatuses(statusesData);
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || 'Failed to load project data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadProjectData = async () => {
-      try {
-        setLoading(true);
-        const projectData = await fetchProjectDetails(projectId);
-        setProject(projectData);
-        
-        const statusData = await fetchLatestStatus(projectId);
-        setStatus(statusData);
-        
-        const statusesData = await fetchProjectStatuses(projectId);
-        setStatuses(statusesData);
-      } catch (err) {
-        setError('Failed to load project data');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
     loadProjectData();
   }, [projectId]);
 
   const handleSaveStatus = async (saveType) => {
     if (!status) return;
-    
+
     try {
       setIsSaving(true);
       const updatedStatus = {
@@ -59,16 +60,16 @@ const ProjectStatusPage = () => {
         is_baseline: saveType === 'baseline' || status.is_baseline,
         is_final: saveType === 'final' || status.is_final,
       };
-      
       const savedStatus = await saveStatus(updatedStatus.id, updatedStatus);
       setStatus(savedStatus);
-      
-      // Refresh statuses list
-      const statusesData = await fetchProjectStatuses(projectId);
-      setStatuses(statusesData);
+
+      // Optimistic refresh
+      setStatuses(prev =>
+        prev.map(s => (s.id === savedStatus.id ? savedStatus : s))
+      );
     } catch (err) {
-      setError('Failed to save project status');
       console.error(err);
+      setError(err.response?.data?.message || 'Failed to save project status.');
     } finally {
       setIsSaving(false);
     }
@@ -76,19 +77,36 @@ const ProjectStatusPage = () => {
 
   const handleResponsibilityChange = (updatedResponsibility) => {
     if (!status) return;
-    
-    const updatedResponsibilities = status.responsibilities.map(resp => 
-      resp.id === updatedResponsibility.id ? updatedResponsibility : resp
-    );
-    
-    setStatus({
-      ...status,
-      responsibilities: updatedResponsibilities
-    });
+    setStatus(prev => ({
+      ...prev,
+      responsibilities: prev.responsibilities.map(resp =>
+        resp.id === updatedResponsibility.id ? updatedResponsibility : resp
+      ),
+    }));
+  };
+
+  const handleResponsibilityCreated = async () => {
+    try {
+      const [statusData, statusesData] = await Promise.all([
+        fetchLatestStatus(projectId),
+        fetchProjectStatuses(projectId)
+      ]);
+      setStatus(statusData);
+      setStatuses(statusesData);
+    } catch (err) {
+      console.error('Failed to refresh statuses after responsibility creation', err);
+    }
   };
 
   if (loading) return <Loader />;
-  if (error) return <Alert type="error" message={error} />;
+  if (error) return (
+    <Alert 
+      type="error" 
+      message={error} 
+      actionLabel="Retry"
+      onAction={loadProjectData}
+    />
+  );
   if (!project || !status) return <Alert type="info" message="Project not found" />;
 
   return (
@@ -98,15 +116,16 @@ const ProjectStatusPage = () => {
         status={status} 
         onBack={() => navigate('/dashboard')}
       />
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <ResponsibilityList 
             responsibilities={status.responsibilities} 
             onResponsibilityChange={handleResponsibilityChange}
+            onResponsibilityCreated={handleResponsibilityCreated}
             currentUser={user}
           />
-          
+
           <StatusSavePanel 
             onSave={handleSaveStatus} 
             isSaving={isSaving}
@@ -114,14 +133,14 @@ const ProjectStatusPage = () => {
             isFinal={status.is_final}
           />
         </div>
-        
+
         <div className="space-y-6">
           <EscalationPanel 
             responsibilities={status.responsibilities}
             projectId={projectId}
             statusId={status.id}
           />
-          
+
           <StatusTimeline 
             statuses={statuses} 
             currentStatusId={status.id}
