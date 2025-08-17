@@ -5,19 +5,23 @@ import { PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import ResponsibilityItem from './ResponsibilityItem';
 import { createResponsibility } from '../../api/responsibilities';
 import { fetchUsers } from '../../api/users';
+import { fetchProjectStatuses } from '../../api/status';
+
+const MAX_STATUSES_IN_PICKER = 10;
 
 const ResponsibilityList = ({
   responsibilities = [],
   onResponsibilityChange,
   currentUser,
-  statusId,
-  onResponsibilityCreated
+  projectId,            // ← NEW: needed to fetch statuses
+  onResponsibilityCreated,
 }) => {
+  /* ---------- modal & form ---------- */
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Form state
+  // basic fields
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState('G');
   const [responsible, setResponsible] = useState(currentUser?.id || '');
@@ -26,17 +30,12 @@ const ResponsibilityList = ({
   const [needsEscalation, setNeedsEscalation] = useState(false);
   const [comment, setComment] = useState('');
 
-  // Users dropdown
+  // dropdown data
   const [users, setUsers] = useState([]);
+  const [allStatuses, setAllStatuses] = useState([]);
+  const [selectedStatusId, setSelectedStatusId] = useState('');
 
-  useEffect(() => {
-    if (isModalOpen) {
-      fetchUsers()
-        .then(setUsers)
-        .catch((err) => console.error('Failed to load users', err));
-    }
-  }, [isModalOpen]);
-
+  /* ---------- helpers ---------- */
   const resetForm = () => {
     setTitle('');
     setStatus('G');
@@ -45,72 +44,85 @@ const ResponsibilityList = ({
     setProgress(0);
     setNeedsEscalation(false);
     setComment('');
+    setSelectedStatusId('');
   };
 
-  // Role-based permissions
-  const canCreate = () => {
-    // Only Responsible, Deputy, or Project Manager can create
-    return ['RESP', 'DEP', 'PM'].includes(currentUser?.role);
-  };
+  const canCreate = () =>
+    ['ADMIN', 'RESP', 'DEP', 'PM'].includes(currentUser?.role);
 
-  const canEdit = (responsibility) => {
-    const userId = currentUser?.id;
-    const responsibleId = responsibility?.responsible;
-    const deputyId = responsibility?.deputy;
+  const canEdit = (resp) => {
+    const uid = currentUser?.id;
     return (
       ['RESP', 'DEP', 'PM'].includes(currentUser?.role) ||
-      userId === responsibleId ||
-      userId === deputyId
+      uid === resp?.responsible ||
+      uid === resp?.deputy
     );
   };
 
+  /* ---------- modal open / data fetch ---------- */
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    // users
+    fetchUsers().then(setUsers).catch(console.error);
+
+    // statuses – newest first, only latest N
+    if (!projectId) return;
+    fetchProjectStatuses(projectId)
+      .then((list) =>
+        list
+          .sort((a, b) => new Date(b.status_date) - new Date(a.status_date))
+          .slice(0, MAX_STATUSES_IN_PICKER)
+      )
+      .then(setAllStatuses)
+      .catch(console.error);
+  }, [isModalOpen, projectId]);
+
+  /* ---------- submit ---------- */
   const handleCreateResponsibility = async () => {
     setErrorMessage('');
-
     if (!canCreate()) {
-      setErrorMessage('You do not have permission to create a responsibility.');
+      setErrorMessage('No permission to create responsibility.');
       return;
     }
-
     if (!title.trim()) {
       setErrorMessage('Title is required.');
       return;
     }
-
-    const project_status = statusId || (responsibilities[0] && responsibilities[0].project_status);
-    if (!project_status) {
-      setErrorMessage('No project status found. Please create one first.');
+    if (!selectedStatusId) {
+      setErrorMessage('Please select a project status.');
       return;
     }
 
     setIsCreating(true);
     try {
       const payload = {
-        project_status,
+        project_status: selectedStatusId,
         title: title.trim(),
         responsible: responsible || null,
         deputy: deputy || null,
         status,
         progress: Number(progress) || 0,
         needs_escalation: needsEscalation,
-        comment: comment.trim() || ''
+        comment: comment.trim() || '',
       };
-
       const created = await createResponsibility(payload);
-
-      if (typeof onResponsibilityCreated === 'function') await onResponsibilityCreated(created);
-      if (typeof onResponsibilityChange === 'function') onResponsibilityChange(created);
+      if (typeof onResponsibilityCreated === 'function')
+        await onResponsibilityCreated(created);
+      if (typeof onResponsibilityChange === 'function')
+        onResponsibilityChange(created);
 
       resetForm();
       setIsModalOpen(false);
     } catch (err) {
-      console.error('Failed to create responsibility', err);
-      setErrorMessage('Failed to create responsibility. Please try again.');
+      console.error(err);
+      setErrorMessage('Failed to create responsibility.');
     } finally {
       setIsCreating(false);
     }
   };
 
+  /* ---------- render ---------- */
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       {/* Header */}
@@ -130,17 +142,17 @@ const ResponsibilityList = ({
         </button>
       </div>
 
-      {/* Responsibilities list */}
+      {/* List */}
       {responsibilities.length === 0 ? (
         <div className="p-6 text-center text-gray-500 italic select-none">
           No responsibilities found. Click "Add Responsibility" to create one.
         </div>
       ) : (
         <div className="divide-y divide-gray-200">
-          {responsibilities.map((responsibility) => (
+          {responsibilities.map((r) => (
             <ResponsibilityItem
-              key={responsibility.id}
-              responsibility={responsibility}
+              key={r.id}
+              responsibility={r}
               onChange={onResponsibilityChange}
               currentUser={currentUser}
             />
@@ -174,7 +186,6 @@ const ResponsibilityList = ({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel className="bg-white rounded-xl shadow-lg max-w-md w-full p-6">
-                {/* Title bar */}
                 <div className="flex justify-between items-center mb-4">
                   <Dialog.Title className="text-lg font-semibold text-gray-900">
                     Add Responsibility
@@ -187,13 +198,28 @@ const ResponsibilityList = ({
                   </button>
                 </div>
 
-                {/* Error */}
                 {errorMessage && (
                   <div className="mb-3 p-2 text-sm bg-red-50 text-red-600 rounded">{errorMessage}</div>
                 )}
 
-                {/* Form */}
                 <div className="space-y-4">
+                  {/* Status picker */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Attach to Status</label>
+                    <select
+                      value={selectedStatusId}
+                      onChange={(e) => setSelectedStatusId(e.target.value)}
+                      className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Select Status --</option>
+                      {allStatuses.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.status_date} – {s.phase_display || s.phase}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Title */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -229,9 +255,9 @@ const ResponsibilityList = ({
                       className="w-full border rounded p-2 bg-white text-gray-900"
                     >
                       <option value="">-- Select Responsible --</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.full_name || user.username}
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name || u.username}
                         </option>
                       ))}
                     </select>
@@ -246,9 +272,9 @@ const ResponsibilityList = ({
                       className="w-full border rounded p-2 bg-white text-gray-900"
                     >
                       <option value="">-- Select Deputy --</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.full_name || user.username}
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name || u.username}
                         </option>
                       ))}
                     </select>
@@ -294,7 +320,6 @@ const ResponsibilityList = ({
                   </div>
                 </div>
 
-                {/* Footer */}
                 <div className="mt-6 flex justify-end space-x-2">
                   <button
                     onClick={() => setIsModalOpen(false)}

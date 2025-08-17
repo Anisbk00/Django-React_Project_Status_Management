@@ -37,14 +37,9 @@ export const fetchLatestStatus = async (projectId) => {
  * @param {Object} data - Partial status object to update.
  * @returns {Promise<Object>} Updated status object.
  */
-export const saveStatus = async (id, data) => {
-  try {
-    const response = await api.patch(`/status/${id}/`, data);
-    return response.data;
-  } catch (err) {
-    console.error(`Error updating status ${id}:`, err);
-    throw err;
-  }
+export const saveStatus = async (id, payload) => {
+  const { data } = await api.patch(`/status/${id}/`, payload);
+  return data;
 };
 
 /**
@@ -52,14 +47,11 @@ export const saveStatus = async (id, data) => {
  * @param {Object} data - Status object data.
  * @returns {Promise<Object>} Created status object.
  */
-export const createStatus = async (data) => {
-  try {
-    const response = await api.post('/status/', data);
-    return response.data;
-  } catch (err) {
-    console.error('Error creating status:', err);
-    throw err;
-  }
+export const createStatus = async (payload, projectId) => {
+  // ensure backend receives project PK in the request body
+  const body = { ...payload, project: projectId };
+  const { data } = await api.post('/status/', body);
+  return data;
 };
 
 /**

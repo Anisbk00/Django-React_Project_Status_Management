@@ -129,14 +129,7 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
       currentUser.id === deputyId || // Deputy can edit
       currentUser.role === 'PM' // Project Manager can edit
     );
-  }, [
-    currentUser?.id,
-    currentUser?.role,
-    responsibility?.responsible_details?.id,
-    responsibility?.deputy_details?.id,
-    responsibility?.responsible,
-    responsibility?.deputy
-  ]);
+  }, [currentUser, responsibility?.responsible_details?.id, responsibility?.responsible, responsibility?.deputy_details?.id, responsibility?.deputy]);
 
   return (
     <div className="p-4 rounded-lg hover:bg-gray-50 transition-colors border border-gray-100">
@@ -288,12 +281,11 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
 
             <div>
               <span className="font-semibold text-gray-700">Deputy:</span>{' '}
-              {responsibility?.deputy_details?.first_name ? (
+              {responsibility?.deputy_details ? (
                 <span className="text-gray-800">
-                  {responsibility.deputy_details.first_name} {responsibility.deputy_details.last_name}
+                  {responsibility.deputy_details.full_name ||
+                    `${responsibility.deputy_details.first_name || ''} ${responsibility.deputy_details.last_name || ''}`.trim()}
                 </span>
-              ) : responsibility?.deputy ? (
-                <span className="text-gray-700">{String(responsibility.deputy)}</span>
               ) : (
                 <span className="text-gray-400 ml-1 italic">None</span>
               )}

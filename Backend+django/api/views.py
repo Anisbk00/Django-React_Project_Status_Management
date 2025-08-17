@@ -13,6 +13,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 import secrets
 from .models import PasswordResetToken
+from rest_framework.exceptions import ValidationError
+
 
 from .models import CustomUser, Project, ProjectStatus, Responsibility, Escalation
 from .serializers import (
@@ -96,46 +98,49 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
 
 class ProjectStatusViewSet(viewsets.ModelViewSet):
-    queryset = ProjectStatus.objects.all().order_by('-status_date')
+    queryset = ProjectStatus.objects.all()   
     serializer_class = ProjectStatusSerializer
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project', 'phase', 'is_baseline', 'is_final']
 
     def get_queryset(self):
+        qs = ProjectStatus.objects.all()
+        # Always bring responsibilities along
+        qs = qs.prefetch_related('responsibilities__responsible', 'responsibilities__deputy')
         project_id = self.request.query_params.get('project_id')
         if project_id:
-            return ProjectStatus.objects.filter(project_id=project_id)
-        return super().get_queryset()
+            qs = qs.filter(project_id=project_id)
+        return qs.order_by('-status_date')
 
+    def get_permissions(self):
+        # keep read operations broadly available, restrict write to project managers / admins
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'save_baseline', 'save_final', 'clone_previous']:
+            return [permissions.IsAuthenticated(), IsProjectManager()]
+        return [permissions.IsAuthenticated()]
+    
     def perform_create(self, serializer):
-        project = serializer.validated_data['project']
-        project.current_phase = serializer.validated_data['phase']
-        project.save()
+        """
+        Create a ProjectStatus where:
+        - `project` is inferred from request.query_params['project_id']
+        - `created_by` is taken from request.user (no need for frontend to pass)
+        - `status_date` will be taken from the serializer data if provided, otherwise defaults to today
+        """
+        project_id = self.request.query_params.get('project_id') or self.request.data.get('project')
+        if not project_id:
+            raise ValidationError({'project_id': 'project_id query parameter is required.'})
 
-        # Determine if this is the first status for the project
-        existing_count = ProjectStatus.objects.filter(project=project).count()
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            raise ValidationError({'project_id': 'Project not found.'})
+
+        # Let user pass status_date if desired; otherwise default to today.
+        provided_status_date = serializer.validated_data.get('status_date', None)
+        status_date = provided_status_date if provided_status_date else timezone.now().date()
+
         with transaction.atomic():
-            status = serializer.save(
-                created_by=self.request.user,
-                status_date=timezone.now().date()
-            )
-            if existing_count == 0:
-                self.create_default_responsibilities(status)
-
-    def create_default_responsibilities(self, project_status):
-        default_titles = [
-            "Project Estimate",
-            "Resource Allocation",
-            "Risk Management",
-            "Quality Assurance",
-            "Timeline Compliance"
-        ]
-        for title in default_titles:
-            Responsibility.objects.create(
-                project_status=project_status,
-                title=title,
-                responsible=self.request.user
-            )
+            # We pass project and created_by explicitly to serializer.save()
+            status_obj = serializer.save(project=project, created_by=self.request.user, status_date=status_date)
 
     @action(detail=True, methods=['post'])
     def save_baseline(self, request, pk=None):
@@ -217,7 +222,7 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
 class EscalationViewSet(viewsets.ModelViewSet):
     queryset = Escalation.objects.all().order_by('-created_at')
     serializer_class = EscalationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsEscalationManager]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['resolved', 'responsibility__project_status__project']
 
     @action(detail=True, methods=['post'])
