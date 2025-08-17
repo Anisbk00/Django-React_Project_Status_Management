@@ -222,7 +222,7 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
 class EscalationViewSet(viewsets.ModelViewSet):
     queryset = Escalation.objects.all().order_by('-created_at')
     serializer_class = EscalationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filterset_fields = ['resolved', 'responsibility__project_status__project']
 
     @action(detail=True, methods=['post'])

@@ -180,6 +180,7 @@ const ProjectStatusPage = () => {
     setModalActive(false);
     setTimeout(() => setModalMounted(false), 240);
   };
+  const allResponsibilities = statuses.flatMap(s => s.responsibilities || []);
 
   // --- Create-status modal helpers ---
   const updateNewResponsibility = (idx, field, value) => {
@@ -265,9 +266,10 @@ const ProjectStatusPage = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            
             <ResponsibilityList
               projectId={projectId} 
-              responsibilities={status?.responsibilities || []}
+              responsibilities={allResponsibilities}
               onResponsibilityChange={handleResponsibilityChange}
               onResponsibilityCreated={handleResponsibilityCreated}
               currentUser={user}

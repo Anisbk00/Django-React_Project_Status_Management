@@ -268,7 +268,7 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
           <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600">
             <div>
               <span className="font-semibold text-gray-700">Responsible:</span>{' '}
-              {responsibility?.responsible_details?.first_name ? (
+              {responsibility?.re?.first_name ? (
                 <span className="text-gray-800">
                   {responsibility.responsible_details.first_name} {responsibility.responsible_details.last_name}
                 </span>

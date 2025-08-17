@@ -1,8 +1,9 @@
+/* eslint-disable no-unused-vars */
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useState, useEffect } from 'react';
+import ResponsibilityItem from '../project/ResponsibilityItem'; // adjust path if needed
 
-// Map phase codes to readable labels
 const phaseLabels = {
   PLAN: 'Planning',
   DEV: 'Development',
@@ -11,23 +12,19 @@ const phaseLabels = {
   COMP: 'Completed',
 };
 
-const StatusTimeline = ({ statuses = [], currentStatusId, projectId }) => {
+const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser }) => {
   const [animatedStatuses, setAnimatedStatuses] = useState([]);
 
   useEffect(() => {
-    let timeouts = [];
-    setAnimatedStatuses([]); // reset before animating
-
+    const timeouts = [];
+    setAnimatedStatuses([]);
     statuses.forEach((status, index) => {
       const timeout = setTimeout(() => {
         setAnimatedStatuses((prev) => [...prev, status]);
-      }, index * 100); // 100ms delay per item
+      }, index * 100);
       timeouts.push(timeout);
     });
-
-    return () => {
-      timeouts.forEach(clearTimeout); // cleanup timers
-    };
+    return () => timeouts.forEach(clearTimeout);
   }, [statuses]);
 
   if (!statuses.length) return null;
@@ -51,7 +48,6 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId }) => {
                   isCurrent ? 'scale-105 opacity-100' : 'opacity-100'
                 }`}
               >
-                {/* Timeline line */}
                 {index !== animatedStatuses.length - 1 && (
                   <span
                     className="absolute top-8 left-4 -ml-px h-full w-0.5 bg-gray-200"
@@ -64,46 +60,55 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId }) => {
                     isCurrent ? 'bg-blue-50' : 'hover:bg-gray-50'
                   }`}
                 >
-                  {/* Status badge */}
-                  <div>
-                    <span
-                      className={`flex h-8 w-8 items-center justify-center rounded-full ring-4 ring-white text-sm font-semibold transition-colors duration-300 ${
-                        isCurrent
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-400 text-white group-hover:bg-gray-500'
-                      }`}
-                    >
-                      {index + 1}
-                    </span>
-                  </div>
+                  <span
+                    className={`flex h-8 w-8 items-center justify-center rounded-full ring-4 ring-white text-sm font-semibold transition-colors duration-300 ${
+                      isCurrent
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-400 text-white group-hover:bg-gray-500'
+                    }`}
+                  >
+                    {index + 1}
+                  </span>
 
-                  {/* Status details */}
-                  <div className="min-w-0 flex-1 flex justify-between space-x-4">
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        {phaseLabel} • {status.created_by_details?.username ?? 'Unknown'}
-                      </p>
-                      <p className="text-sm font-medium text-gray-900">
-                        {status.status_date
-                          ? format(new Date(status.status_date), 'MMM d, yyyy')
-                          : '—'}
-                      </p>
-                      <div className="mt-1 space-x-1">
-                        {status.is_baseline && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            Baseline
-                          </span>
-                        )}
-                        {status.is_final && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                            Final
-                          </span>
-                        )}
-                      </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-gray-500">
+                      {phaseLabel} • {status.created_by_details?.username ?? 'Unknown'}
+                    </p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {status.status_date
+                        ? format(new Date(status.status_date), 'MMM d, yyyy')
+                        : '—'}
+                    </p>
+
+                    <div className="mt-1 space-x-2">
+                      {status.is_baseline && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          Baseline
+                        </span>
+                      )}
+                      {status.is_final && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          Final
+                        </span>
+                      )}
                     </div>
 
-                    {/* View link */}
-                    <div className="text-right text-sm whitespace-nowrap text-gray-500">
+                    {/* Responsibilities under this status */}
+                    {status.responsibilities?.length > 0 && (
+                      <ul className="mt-3 space-y-2">
+                        {status.responsibilities.map((r) => (
+                          <li key={r.id} className="text-sm text-gray-700">
+                            <strong>{r.title}</strong> –{' '}
+                            {r.responsible_details?.full_name ||
+                              `${r.responsible_details?.first_name || ''} ${r.responsible_details?.last_name || ''}`.trim() ||
+                              'Unassigned'}{' '}
+                            ({r.status_display || r.status})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <div className="text-right text-sm mt-2">
                       <Link
                         to={`/projects/${projectId}/status/${status.id}`}
                         className="font-medium text-blue-600 hover:text-blue-800"
