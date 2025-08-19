@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useState, useEffect } from 'react';
 import ResponsibilityItem from '../project/ResponsibilityItem'; // adjust path if needed
@@ -13,6 +13,7 @@ const phaseLabels = {
 };
 
 const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser }) => {
+  const navigate = useNavigate();
   const [animatedStatuses, setAnimatedStatuses] = useState([]);
 
   useEffect(() => {
@@ -29,6 +30,38 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser
 
   if (!statuses.length) return null;
 
+  const navigateToStatus = (status) => {
+    if (!status || !status.id) {
+      console.warn('Trying to navigate to a status with no id:', status);
+      return;
+    }
+
+    // Prefer the project-aware route if projectId exists (keeps URLs nested)
+    if (projectId) {
+      const projectRoute = `/projects/${projectId}/status/${status.id}`;
+      // navigate client-side
+      navigate(projectRoute);
+      return;
+    }
+
+    // Fallback to a simpler route if projectId not provided
+    const fallbackRoute = `/status/${status.id}`;
+    navigate(fallbackRoute);
+  };
+
+  const renderResponsibleName = (r) => {
+    const det = r?.responsible_details;
+    if (det) {
+      return (det.full_name && det.full_name.trim()) ||
+        `${(det.first_name || '').trim()} ${(det.last_name || '').trim()}`.trim() ||
+        det.username ||
+        String(r.responsible || '');
+    }
+    // if only id present, show id or "Unassigned"
+    if (r?.responsible) return String(r.responsible);
+    return 'Unassigned';
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200">
@@ -43,7 +76,7 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser
 
             return (
               <li
-                key={status.id}
+                key={status.id ?? index}
                 className={`mb-8 last:mb-0 relative transition-all duration-500 ease-out transform ${
                   isCurrent ? 'scale-105 opacity-100' : 'opacity-100'
                 }`}
@@ -75,9 +108,7 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser
                       {phaseLabel} • {status.created_by_details?.username ?? 'Unknown'}
                     </p>
                     <p className="text-sm font-medium text-gray-900">
-                      {status.status_date
-                        ? format(new Date(status.status_date), 'MMM d, yyyy')
-                        : '—'}
+                      {status.status_date ? format(new Date(status.status_date), 'MMM d, yyyy') : '—'}
                     </p>
 
                     <div className="mt-1 space-x-2">
@@ -98,23 +129,20 @@ const StatusTimeline = ({ statuses = [], currentStatusId, projectId, currentUser
                       <ul className="mt-3 space-y-2">
                         {status.responsibilities.map((r) => (
                           <li key={r.id} className="text-sm text-gray-700">
-                            <strong>{r.title}</strong> –{' '}
-                            {r.responsible_details?.full_name ||
-                              `${r.responsible_details?.first_name || ''} ${r.responsible_details?.last_name || ''}`.trim() ||
-                              'Unassigned'}{' '}
-                            ({r.status_display || r.status})
+                            <strong>{r.title}</strong> – {renderResponsibleName(r)} ({r.status_display || r.status})
                           </li>
                         ))}
                       </ul>
                     )}
 
                     <div className="text-right text-sm mt-2">
-                      <Link
-                        to={`/projects/${projectId}/status/${status.id}`}
+                      <button
+                        type="button"
+                        onClick={() => navigateToStatus(status)}
                         className="font-medium text-blue-600 hover:text-blue-800"
                       >
                         View
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 </div>

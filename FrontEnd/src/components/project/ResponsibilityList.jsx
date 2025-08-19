@@ -13,29 +13,25 @@ const ResponsibilityList = ({
   responsibilities = [],
   onResponsibilityChange,
   currentUser,
-  projectId,            // ← NEW: needed to fetch statuses
+  projectId,
   onResponsibilityCreated,
 }) => {
-  /* ---------- modal & form ---------- */
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // basic fields
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState('G');
   const [responsible, setResponsible] = useState(currentUser?.id || '');
   const [deputy, setDeputy] = useState('');
   const [progress, setProgress] = useState(0);
   const [needsEscalation, setNeedsEscalation] = useState(false);
-  const [comment, setComment] = useState('');
+  const [comments, setComments] = useState('');
 
-  // dropdown data
   const [users, setUsers] = useState([]);
   const [allStatuses, setAllStatuses] = useState([]);
   const [selectedStatusId, setSelectedStatusId] = useState('');
 
-  /* ---------- helpers ---------- */
   const resetForm = () => {
     setTitle('');
     setStatus('G');
@@ -43,30 +39,18 @@ const ResponsibilityList = ({
     setDeputy('');
     setProgress(0);
     setNeedsEscalation(false);
-    setComment('');
+    setComments('');
     setSelectedStatusId('');
   };
 
-  const canCreate = () =>
-    ['ADMIN', 'RESP', 'DEP', 'PM'].includes(currentUser?.role);
+  // allow ADMIN and project roles to create by default; adjust if you want stricter rules
+  const canCreate = () => ['ADMIN', 'PM', 'RESP', 'DEP'].includes(currentUser?.role);
 
-  const canEdit = (resp) => {
-    const uid = currentUser?.id;
-    return (
-      ['RESP', 'DEP', 'PM'].includes(currentUser?.role) ||
-      uid === resp?.responsible ||
-      uid === resp?.deputy
-    );
-  };
-
-  /* ---------- modal open / data fetch ---------- */
   useEffect(() => {
     if (!isModalOpen) return;
 
-    // users
     fetchUsers().then(setUsers).catch(console.error);
 
-    // statuses – newest first, only latest N
     if (!projectId) return;
     fetchProjectStatuses(projectId)
       .then((list) =>
@@ -78,54 +62,58 @@ const ResponsibilityList = ({
       .catch(console.error);
   }, [isModalOpen, projectId]);
 
-  /* ---------- submit ---------- */
   const handleCreateResponsibility = async () => {
     setErrorMessage('');
+
     if (!canCreate()) {
-      setErrorMessage('No permission to create responsibility.');
+      setErrorMessage('You do not have permission to create a responsibility.');
       return;
     }
+
     if (!title.trim()) {
       setErrorMessage('Title is required.');
       return;
     }
-    if (!selectedStatusId) {
-      setErrorMessage('Please select a project status.');
+
+    // prefer explicit selectedStatusId, fallback to first responsibility.project_status if present
+    const project_status = selectedStatusId || (responsibilities[0] && responsibilities[0].project_status);
+
+    if (!project_status) {
+      setErrorMessage('Please select a project status (or open the project first).');
       return;
     }
 
     setIsCreating(true);
     try {
       const payload = {
-        project_status: selectedStatusId,
+        project_status,
         title: title.trim(),
         responsible: responsible || null,
         deputy: deputy || null,
         status,
         progress: Number(progress) || 0,
         needs_escalation: needsEscalation,
-        comment: comment.trim() || '',
+        // backend expects "comments"
+        comments: comments.trim() || '',
       };
+
       const created = await createResponsibility(payload);
-      if (typeof onResponsibilityCreated === 'function')
-        await onResponsibilityCreated(created);
-      if (typeof onResponsibilityChange === 'function')
-        onResponsibilityChange(created);
+
+      if (typeof onResponsibilityCreated === 'function') await onResponsibilityCreated(created);
+      if (typeof onResponsibilityChange === 'function') onResponsibilityChange(created);
 
       resetForm();
       setIsModalOpen(false);
     } catch (err) {
-      console.error(err);
-      setErrorMessage('Failed to create responsibility.');
+      console.error('Failed to create responsibility', err);
+      setErrorMessage('Failed to create responsibility. Please try again.');
     } finally {
       setIsCreating(false);
     }
   };
 
-  /* ---------- render ---------- */
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
-      {/* Header */}
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h2 className="text-lg font-semibold text-gray-800">Responsibilities</h2>
         <button
@@ -142,7 +130,6 @@ const ResponsibilityList = ({
         </button>
       </div>
 
-      {/* List */}
       {responsibilities.length === 0 ? (
         <div className="p-6 text-center text-gray-500 italic select-none">
           No responsibilities found. Click "Add Responsibility" to create one.
@@ -160,7 +147,6 @@ const ResponsibilityList = ({
         </div>
       )}
 
-      {/* Modal */}
       <Transition appear show={isModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={() => setIsModalOpen(false)}>
           <Transition.Child
@@ -190,10 +176,7 @@ const ResponsibilityList = ({
                   <Dialog.Title className="text-lg font-semibold text-gray-900">
                     Add Responsibility
                   </Dialog.Title>
-                  <button
-                    onClick={() => setIsModalOpen(false)}
-                    className="p-1 rounded hover:bg-gray-100"
-                  >
+                  <button onClick={() => setIsModalOpen(false)} className="p-1 rounded hover:bg-gray-100">
                     <XMarkIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
                   </button>
                 </div>
@@ -203,7 +186,6 @@ const ResponsibilityList = ({
                 )}
 
                 <div className="space-y-4">
-                  {/* Status picker */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Attach to Status</label>
                     <select
@@ -220,7 +202,6 @@ const ResponsibilityList = ({
                     </select>
                   </div>
 
-                  {/* Title */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                     <input
@@ -232,7 +213,6 @@ const ResponsibilityList = ({
                     />
                   </div>
 
-                  {/* Status Color */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status Color</label>
                     <select
@@ -246,7 +226,6 @@ const ResponsibilityList = ({
                     </select>
                   </div>
 
-                  {/* Responsible */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Responsible</label>
                     <select
@@ -263,7 +242,6 @@ const ResponsibilityList = ({
                     </select>
                   </div>
 
-                  {/* Deputy */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Deputy</label>
                     <select
@@ -280,7 +258,6 @@ const ResponsibilityList = ({
                     </select>
                   </div>
 
-                  {/* Progress */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Progress (%)</label>
                     <input
@@ -294,7 +271,6 @@ const ResponsibilityList = ({
                     />
                   </div>
 
-                  {/* Needs Escalation */}
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -308,12 +284,11 @@ const ResponsibilityList = ({
                     </label>
                   </div>
 
-                  {/* Comment */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
                     <textarea
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
+                      value={comments}
+                      onChange={(e) => setComments(e.target.value)}
                       className="w-full border rounded p-2 bg-white text-gray-900"
                       placeholder="Add a comment..."
                     />

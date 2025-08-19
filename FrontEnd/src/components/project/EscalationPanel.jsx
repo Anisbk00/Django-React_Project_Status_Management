@@ -3,14 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { ExclamationCircleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { triggerEscalation, resolveEscalation, fetchEscalations } from '../../api/escalations';
 import { fetchUsers } from '../../api/users';
+import UserSelector from '../ui/UserSelector';
 import Alert from '../ui/Alert';
 import Button from '../ui/Button';
 
 /**
- * EscalationPanel (updated for improved contrast)
- * - Adds consistent gray text classes so content is visible on light backgrounds
- * - Improves readability for inputs, lists and history items
- * - Keeps existing behavior (single & bulk escalate, history, resolve)
+ * EscalationPanel (improved contrast + proper user selects)
  */
 const EscalationPanel = ({
   responsibilities = [],
@@ -18,73 +16,87 @@ const EscalationPanel = ({
   currentUser = null,
   users: incomingUsers = null,
 }) => {
-  const [escalations, setEscalations] = useState([]); // open escalations (quick view)
-  const [history, setHistory] = useState({ results: [], next: null, previous: null }); // paginated history
+  const [escalations, setEscalations] = useState([]);
+  const [history, setHistory] = useState({ results: [], next: null, previous: null });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('open'); // 'open' | 'resolved' | 'all'
-  const [historyPageParams, setHistoryPageParams] = useState({}); // pass through to API (for next/prev)
   const [isLoading, setIsLoading] = useState(false);
   const [generalMessage, setGeneralMessage] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
 
-  // Form state
-  const [selectedResponsibility, setSelectedResponsibility] = useState('');
+  // form state
+  const [selectedResponsibility, setSelectedResponsibility] = useState(''); // will be id (number/string)
   const [escalationReason, setEscalationReason] = useState('');
-  const [selectedCreator, setSelectedCreator] = useState(currentUser?.id || '');
+  const [selectedCreator, setSelectedCreator] = useState(currentUser?.id || null); // may be object or id
   const [resolved, setResolved] = useState(false);
   const [resolvedAt, setResolvedAt] = useState('');
-  const [resolvedBy, setResolvedBy] = useState(currentUser?.id || '');
+  const [resolvedBy, setResolvedBy] = useState(currentUser?.id || null); // may be object or id
   const [users, setUsers] = useState(incomingUsers || []);
 
   const escalatedResponsibilities = Array.isArray(responsibilities)
-    ? responsibilities.filter(r => r.needs_escalation || r.status === 'Y' || r.status === 'R')
+    ? responsibilities.filter((r) => r.needs_escalation || r.status === 'Y' || r.status === 'R')
     : [];
 
   const canSeeEscalations = ['EM', 'ADMIN'].includes(currentUser?.role);
 
-  // Load users if not provided
+  // load users when needed
   useEffect(() => {
-    if (incomingUsers) return;
+    if (incomingUsers) {
+      // if incomingUsers provided, keep them
+      if (currentUser?.id) {
+        setSelectedCreator((prev) => prev || currentUser.id);
+        setResolvedBy((prev) => prev || currentUser.id);
+      }
+      return;
+    }
+
     let mounted = true;
     const loadUsers = async () => {
       try {
         const u = await fetchUsers();
-        if (mounted) {
-          setUsers(u);
-          if (currentUser?.id) {
-            setSelectedCreator(prev => prev || currentUser.id);
-            setResolvedBy(prev => prev || currentUser.id);
-          }
+        if (!mounted) return;
+        setUsers(Array.isArray(u) ? u : u.results ?? []);
+        if (currentUser?.id) {
+          setSelectedCreator((prev) => prev || currentUser.id);
+          setResolvedBy((prev) => prev || currentUser.id);
         }
       } catch (err) {
         console.error('Failed to fetch users', err);
       }
     };
     loadUsers();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [incomingUsers, currentUser]);
 
-  // Load quick open escalations for the header/list (non-paginated)
+  // load quick open escalations
   useEffect(() => {
     if (!projectId || !canSeeEscalations) return;
-
     let mounted = true;
     const load = async () => {
       try {
         const data = await fetchEscalations({ project: projectId, resolved: false });
-        if (mounted) setEscalations(Array.isArray(data) ? data : data.results || []);
+        if (!mounted) return;
+        const list = Array.isArray(data) ? data : data.results ?? [];
+        setEscalations(list);
       } catch (err) {
         console.error('Failed to fetch escalations', err);
       }
     };
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [projectId, canSeeEscalations]);
 
-  // Load history (paginated) — called whenever filter or project changes
+  // load history (paginated)
   useEffect(() => {
     if (!projectId || !canSeeEscalations) return;
-    loadHistory({ project: projectId, resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined });
+    loadHistory({
+      project: projectId,
+      resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, historyFilter, canSeeEscalations]);
 
@@ -93,12 +105,15 @@ const EscalationPanel = ({
     setGeneralMessage(null);
     try {
       const data = await fetchEscalations(params);
-      if (data && Array.isArray(data)) {
+      if (Array.isArray(data)) {
         setHistory({ results: data, next: null, previous: null });
       } else {
-        setHistory({ results: data.results || [], next: data.next || null, previous: data.previous || null });
+        setHistory({
+          results: data.results ?? [],
+          next: data.next ?? null,
+          previous: data.previous ?? null,
+        });
       }
-      setHistoryPageParams(params);
     } catch (err) {
       console.error('Failed to load escalation history', err);
       setGeneralMessage('Failed to load escalation history.');
@@ -113,10 +128,14 @@ const EscalationPanel = ({
     setGeneralMessage(null);
     try {
       const data = await fetchEscalations({ url });
-      if (data && Array.isArray(data)) {
+      if (Array.isArray(data)) {
         setHistory({ results: data, next: null, previous: null });
       } else {
-        setHistory({ results: data.results || [], next: data.next || null, previous: data.previous || null });
+        setHistory({
+          results: data.results ?? [],
+          next: data.next ?? null,
+          previous: data.previous ?? null,
+        });
       }
     } catch (err) {
       console.error('Failed nav history', err);
@@ -129,10 +148,10 @@ const EscalationPanel = ({
   const resetForm = () => {
     setSelectedResponsibility('');
     setEscalationReason('');
-    setSelectedCreator(currentUser?.id || '');
+    setSelectedCreator(currentUser?.id || null);
     setResolved(false);
     setResolvedAt('');
-    setResolvedBy(currentUser?.id || '');
+    setResolvedBy(currentUser?.id || null);
     setFieldErrors({});
     setGeneralMessage(null);
   };
@@ -147,7 +166,7 @@ const EscalationPanel = ({
         if (respId !== null) next[`${respId}:${key}`] = message;
         else next[key] = message;
       }
-      setFieldErrors(prev => ({ ...prev, ...next }));
+      setFieldErrors((prev) => ({ ...prev, ...next }));
       const nonField = backendData.non_field_errors || backendData?.detail || backendData.error;
       if (nonField) setGeneralMessage(Array.isArray(nonField) ? nonField.join(' ') : String(nonField));
     } else {
@@ -155,21 +174,28 @@ const EscalationPanel = ({
     }
   };
 
+  // helper: get id from user object or id
+  const idOf = (u) => {
+    if (!u) return null;
+    if (typeof u === 'object') return u.id ?? u.pk ?? null;
+    return u;
+  };
+
   const buildPayload = (respId) => {
     const payload = {
       responsibility: respId,
       reason: escalationReason.trim(),
-      created_by: selectedCreator || currentUser?.id,
+      created_by: idOf(selectedCreator) || idOf(currentUser),
     };
     if (resolved) {
       payload.resolved = true;
       payload.resolved_at = resolvedAt ? new Date(resolvedAt).toISOString() : new Date().toISOString();
-      payload.resolved_by = resolvedBy || selectedCreator || currentUser?.id;
+      payload.resolved_by = idOf(resolvedBy) || idOf(selectedCreator) || idOf(currentUser);
     }
     return payload;
   };
 
-  // Single escalation
+  // single escalation
   const handleTriggerEscalation = async () => {
     setFieldErrors({});
     setGeneralMessage(null);
@@ -182,7 +208,7 @@ const EscalationPanel = ({
       setFieldErrors({ reason: 'Please provide a reason.' });
       return;
     }
-    if (!selectedCreator && !currentUser?.id) {
+    if (!idOf(selectedCreator) && !idOf(currentUser)) {
       setFieldErrors({ created_by: 'Please select the creator.' });
       return;
     }
@@ -193,13 +219,14 @@ const EscalationPanel = ({
       await triggerEscalation(payload);
       setGeneralMessage('Escalation created.');
       resetForm();
+
       if (projectId && canSeeEscalations) {
-        const [openList] = await Promise.all([
-          fetchEscalations({ project: projectId, resolved: false }),
-          fetchEscalations({ project: projectId, resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined }).catch(() => null),
-        ]);
-        setEscalations(Array.isArray(openList) ? openList : openList.results || []);
-        loadHistory({ project: projectId, resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined });
+        const openList = await fetchEscalations({ project: projectId, resolved: false });
+        setEscalations(Array.isArray(openList) ? openList : openList.results ?? []);
+        await loadHistory({
+          project: projectId,
+          resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined,
+        });
       }
     } catch (err) {
       console.error(err);
@@ -211,7 +238,7 @@ const EscalationPanel = ({
     }
   };
 
-  // Bulk escalate
+  // bulk escalate
   const handleBulkTrigger = async () => {
     setFieldErrors({});
     setGeneralMessage(null);
@@ -224,7 +251,7 @@ const EscalationPanel = ({
       setFieldErrors({ reason: 'Please provide a reason for bulk escalation.' });
       return;
     }
-    if (!selectedCreator && !currentUser?.id) {
+    if (!idOf(selectedCreator) && !idOf(currentUser)) {
       setFieldErrors({ created_by: 'Please select the creator.' });
       return;
     }
@@ -232,15 +259,18 @@ const EscalationPanel = ({
     setIsLoading(true);
     try {
       const promises = escalatedResponsibilities.map((resp) => {
-        const payload = buildPayload(resp.id);
+        const payload = {
+          ...buildPayload(resp.id),
+          responsibility: resp.id,
+        };
         return triggerEscalation(payload)
-          .then(r => ({ status: 'fulfilled', id: resp.id, r }))
-          .catch(err => ({ status: 'rejected', id: resp.id, err }));
+          .then((r) => ({ status: 'fulfilled', id: resp.id, r }))
+          .catch((err) => ({ status: 'rejected', id: resp.id, err }));
       });
 
       const results = await Promise.all(promises);
-      const successes = results.filter(r => r.status === 'fulfilled');
-      const failures = results.filter(r => r.status === 'rejected');
+      const successes = results.filter((r) => r.status === 'fulfilled');
+      const failures = results.filter((r) => r.status === 'rejected');
 
       if (successes.length && failures.length === 0) {
         setGeneralMessage(`${successes.length} escalations created.`);
@@ -248,7 +278,7 @@ const EscalationPanel = ({
       } else {
         setGeneralMessage(`${successes.length} created, ${failures.length} failed.`);
         const aggregated = {};
-        failures.forEach(f => {
+        failures.forEach((f) => {
           const backend = f.err?.response?.data;
           if (backend && typeof backend === 'object') {
             for (const key in backend) {
@@ -257,14 +287,17 @@ const EscalationPanel = ({
             }
           } else aggregated[`id_${f.id}`] = f.err?.message || 'Unknown error';
         });
-        setFieldErrors(prev => ({ ...prev, ...aggregated }));
+        setFieldErrors((prev) => ({ ...prev, ...aggregated }));
       }
 
       // refresh
       if (projectId && canSeeEscalations) {
         const openList = await fetchEscalations({ project: projectId, resolved: false });
-        setEscalations(Array.isArray(openList) ? openList : openList.results || []);
-        loadHistory({ project: projectId, resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined });
+        setEscalations(Array.isArray(openList) ? openList : openList.results ?? []);
+        await loadHistory({
+          project: projectId,
+          resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined,
+        });
       }
     } catch (err) {
       console.error('Bulk escalate unexpected error', err);
@@ -283,8 +316,11 @@ const EscalationPanel = ({
       setGeneralMessage('Escalation resolved.');
       if (projectId && canSeeEscalations) {
         const openList = await fetchEscalations({ project: projectId, resolved: false });
-        setEscalations(Array.isArray(openList) ? openList : openList.results || []);
-        loadHistory({ project: projectId, resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined });
+        setEscalations(Array.isArray(openList) ? openList : openList.results ?? []);
+        await loadHistory({
+          project: projectId,
+          resolved: historyFilter === 'resolved' ? true : historyFilter === 'open' ? false : undefined,
+        });
       }
     } catch (err) {
       console.error('Resolve escalation error:', err);
@@ -311,11 +347,11 @@ const EscalationPanel = ({
           <div className="space-y-3">
             <h3 className="text-md font-semibold text-gray-800">Open Escalations (Quick)</h3>
             <div className="space-y-2">
-              {escalations.map(e => (
+              {escalations.map((e) => (
                 <div key={e.id} className="flex items-center justify-between border border-gray-200 rounded-md px-4 py-2 text-sm hover:shadow-sm transition bg-white">
                   <span className="text-gray-700">
-                    <strong className="text-gray-900">{e.responsibility_details?.title || e.responsibility}</strong> — <span className="text-gray-700">{e.reason}</span>
-                    <div className="text-xs text-gray-500 mt-1">by <span className="text-gray-600">{e.created_by_details?.username || e.created_by}</span> • <span className="text-gray-600">{new Date(e.created_at).toLocaleString()}</span></div>
+                    <strong className="text-gray-900">{e.responsibility_details?.title ?? e.responsibility}</strong> — <span className="text-gray-700">{e.reason}</span>
+                    <div className="text-xs text-gray-500 mt-1">by <span className="text-gray-600">{e.created_by_details?.username ?? e.created_by}</span> • <span className="text-gray-600">{new Date(e.created_at).toLocaleString()}</span></div>
                   </span>
                   <button
                     onClick={() => handleResolveEscalation(e.id)}
@@ -330,7 +366,7 @@ const EscalationPanel = ({
           </div>
         )}
 
-        {/* Create / Bulk Form (improved text colors) */}
+        {/* Create / Bulk Form */}
         <div className="space-y-4 mt-4">
           <div className="flex items-center justify-between">
             <h3 className="text-md font-medium text-gray-800">Create Escalation</h3>
@@ -349,46 +385,61 @@ const EscalationPanel = ({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Responsibility</label>
-            <select value={selectedResponsibility} onChange={e => setSelectedResponsibility(e.target.value)} className="w-full px-3 py-2 border rounded-md text-gray-800">
+            <select
+              value={selectedResponsibility}
+              onChange={(e) => setSelectedResponsibility(e.target.value ? Number(e.target.value) : '')}
+              className="w-full px-3 py-2 border rounded-md text-gray-800 bg-white"
+            >
               <option value="">-- Select responsibility --</option>
-              {responsibilities.map(r => <option key={r.id} value={r.id} className="text-gray-800">{r.title}{r.status ? ` (${r.status})` : ''}</option>)}
+              {responsibilities.map((r) => (
+                <option key={r.id} value={r.id} style={{ color: '#111827' }}>
+                  {r.title}{r.status ? ` (${r.status})` : ''}
+                </option>
+              ))}
             </select>
             {fieldErrors.responsibility && <p className="mt-1 text-sm text-red-600">{fieldErrors.responsibility}</p>}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-            <textarea value={escalationReason} onChange={(e) => setEscalationReason(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-md text-gray-800" />
+            <textarea value={escalationReason} onChange={(e) => setEscalationReason(e.target.value)} rows="3" className="w-full px-3 py-2 border rounded-md text-gray-800 bg-white" />
             {fieldErrors.reason && <p className="mt-1 text-sm text-red-600">{fieldErrors.reason}</p>}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Created by</label>
-            <select value={selectedCreator} onChange={e => setSelectedCreator(e.target.value)} className="w-full px-3 py-2 border rounded-md text-gray-800">
-              <option value="">-- Select user --</option>
-              {users.map(u => <option key={u.id} value={u.id} className="text-gray-800">{u.full_name || u.username}</option>)}
-            </select>
+            {/* UserSelector returns user object when possible; we accept object or id */}
+            <UserSelector
+              value={selectedCreator}
+              onChange={(val) => setSelectedCreator(val)}
+              allowClear={false}
+              placeholder="Select creator"
+              className="w-full"
+            />
             {fieldErrors.created_by && <p className="mt-1 text-sm text-red-600">{fieldErrors.created_by}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="inline-flex items-center space-x-2">
-              <input type="checkbox" checked={resolved} onChange={(e) => setResolved(e.target.checked)} className="form-checkbox"/>
+              <input type="checkbox" checked={resolved} onChange={(e) => setResolved(e.target.checked)} className="form-checkbox" />
               <span className="text-sm text-gray-700">Resolved</span>
             </label>
             {resolved && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Resolved at</label>
-                  <input type="datetime-local" value={resolvedAt} onChange={(e) => setResolvedAt(e.target.value)} className="w-full px-3 py-2 border rounded-md text-gray-800"/>
+                  <input type="datetime-local" value={resolvedAt} onChange={(e) => setResolvedAt(e.target.value)} className="w-full px-3 py-2 border rounded-md text-gray-800 bg-white" />
                   {fieldErrors.resolved_at && <p className="mt-1 text-sm text-red-600">{fieldErrors.resolved_at}</p>}
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">Resolved by</label>
-                  <select value={resolvedBy} onChange={e => setResolvedBy(e.target.value)} className="w-full px-3 py-2 border rounded-md text-gray-800">
-                    <option value="">-- Select user --</option>
-                    {users.map(u => <option key={u.id} value={u.id} className="text-gray-800">{u.full_name || u.username}</option>)}
-                  </select>
+                  <UserSelector
+                    value={resolvedBy}
+                    onChange={(val) => setResolvedBy(val)}
+                    allowClear={false}
+                    placeholder="Select resolver"
+                    className="w-full"
+                  />
                   {fieldErrors.resolved_by && <p className="mt-1 text-sm text-red-600">{fieldErrors.resolved_by}</p>}
                 </div>
               </div>
@@ -421,7 +472,7 @@ const EscalationPanel = ({
               <p className="text-sm text-gray-500">No escalation records.</p>
             ) : (
               <div className="space-y-2">
-                {history.results.map(h => (
+                {history.results.map((h) => (
                   <div key={h.id} className="border rounded-md px-4 py-3 bg-white">
                     <div className="flex items-start justify-between">
                       <div>
@@ -471,7 +522,9 @@ const EscalationPanel = ({
             <h4 className="text-sm font-medium text-gray-800">Field errors</h4>
             <ul className="mt-2 text-sm text-red-600">
               {Object.entries(fieldErrors).map(([k, v]) => (
-                <li key={k} className="break-words"><strong className="text-gray-700">{k}:</strong> <span className="text-red-600">{v}</span></li>
+                <li key={k} className="break-words">
+                  <strong className="text-gray-700">{k}:</strong> <span className="text-red-600">{v}</span>
+                </li>
               ))}
             </ul>
           </div>

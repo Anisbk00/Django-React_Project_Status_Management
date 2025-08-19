@@ -17,16 +17,21 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
   }, [responsibility]);
 
   function normalizeResponsibility(r) {
-    if (!r) return {
-      id: null,
-      title: '',
-      status: 'G',
-      responsible: null,
-      deputy: null,
-      progress: 0,
-      comments: '',
-      needs_escalation: false,
-    };
+    if (!r) {
+      return {
+        id: null,
+        title: '',
+        status: 'G',
+        responsible: null,
+        deputy: null,
+        progress: 0,
+        comments: '',
+        needs_escalation: false,
+      };
+    }
+
+    // backend may return either "comments" or "comment" in different places — accept both
+    const commentsVal = r.comments ?? r.comment ?? '';
 
     return {
       id: r.id ?? null,
@@ -35,7 +40,7 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
       responsible: r.responsible_details ?? r.responsible ?? null,
       deputy: r.deputy_details ?? r.deputy ?? null,
       progress: r.progress ?? 0,
-      comments: r.comments ?? '',
+      comments: commentsVal,
       needs_escalation: !!r.needs_escalation,
     };
   }
@@ -66,7 +71,8 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
       responsible: extractId(data.responsible),
       deputy: extractId(data.deputy),
       progress: Number(data.progress) || 0,
-      comments: data.comments || '',
+      // backend expects "comments"
+      comments: String(data.comments || '').trim(),
       needs_escalation: !!data.needs_escalation,
     };
   };
@@ -117,17 +123,18 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
     setIsEditing(false);
   };
 
-  // Permission: only Responsible, Deputy, or Project Manager can edit
+  // Permission: Admin, Project Manager (PM), Responsible (RESP), Deputy (DEP) can edit,
+  // and the actual responsible/deputy user can edit too.
   const canEdit = useMemo(() => {
     if (!currentUser) return false;
 
     const responsibleId = responsibility?.responsible_details?.id ?? responsibility?.responsible ?? null;
     const deputyId = responsibility?.deputy_details?.id ?? responsibility?.deputy ?? null;
 
+    const allowedRoles = ['ADMIN', 'PM', 'RESP', 'DEP'];
     return (
-      currentUser.id === responsibleId || // Responsible can edit
-      currentUser.id === deputyId || // Deputy can edit
-      currentUser.role === 'PM' // Project Manager can edit
+      (currentUser?.id && (currentUser.id === responsibleId || currentUser.id === deputyId)) ||
+      allowedRoles.includes(currentUser?.role)
     );
   }, [currentUser, responsibility?.responsible_details?.id, responsibility?.responsible, responsibility?.deputy_details?.id, responsibility?.deputy]);
 
@@ -162,7 +169,6 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
                 />
               </div>
             </div>
-
             {/* Responsible & Deputy */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -268,7 +274,7 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
           <div className="flex flex-wrap items-center gap-6 text-sm text-gray-600">
             <div>
               <span className="font-semibold text-gray-700">Responsible:</span>{' '}
-              {responsibility?.re?.first_name ? (
+              {responsibility?.responsible_details?.first_name ? (
                 <span className="text-gray-800">
                   {responsibility.responsible_details.first_name} {responsibility.responsible_details.last_name}
                 </span>
@@ -292,7 +298,12 @@ const ResponsibilityItem = ({ responsibility, onChange, currentUser }) => {
             </div>
           </div>
 
-          <ProgressBar value={responsibility?.progress ?? 0} />
+          {/* ProgressBar + numeric percent */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <ProgressBar value={responsibility?.progress ?? 0} />
+            </div>
+          </div>
 
           {responsibility?.comments && (
             <div className="bg-gray-50 rounded-lg p-3">
