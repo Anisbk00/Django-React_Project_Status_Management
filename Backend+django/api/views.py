@@ -1,24 +1,32 @@
+# api/views.py
 import logging
+import secrets
+
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import Count, Q, F
+from django.db.models import Q, F
 from django.utils import timezone
+
 from rest_framework import viewsets, permissions, generics, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django_filters import rest_framework as filters
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-import secrets
-from .models import PasswordResetToken
-from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError
 
+from django_filters import rest_framework as filters
 
-from .models import CustomUser, Project, ProjectStatus, Responsibility, Escalation
+from .models import (
+    CustomUser,
+    Project,
+    ProjectStatus,
+    Responsibility,
+    Escalation,
+    PasswordResetToken,
+)
 from .serializers import (
+    ChangePasswordSerializer,
     UserSerializer,
     ProjectSerializer,
     ProjectStatusSerializer,
@@ -58,24 +66,25 @@ class EscalationFilter(filters.FilterSet):
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all().order_by('-created_at')
     serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['code', 'name', 'current_phase']
-    
+
     def get_queryset(self):
         user = self.request.user
-        
+
+        # Admins / PMs see everything
         if user.role in ['PM', 'ADMIN']:
             return super().get_queryset()
 
+        # Deputies: projects where they are deputy
         if user.role == 'DEPUTY':
-            return Project.objects.filter(
-                statuses__responsibilities__deputy=user
-            ).distinct()
+            return Project.objects.filter(statuses__responsibilities__deputy=user).distinct()
 
+        # Responsible: projects where they are responsible
         if user.role == 'RESP':
             return Project.objects.filter(statuses__responsibilities__responsible=user).distinct()
 
-        # Fallback: show projects where the user is either responsible or deputy
+        # Fallback: show projects where user is either responsible or deputy
         return Project.objects.filter(
             Q(statuses__responsibilities__responsible=user) |
             Q(statuses__responsibilities__deputy=user)
@@ -87,7 +96,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         latest_status = project.statuses.order_by('-status_date').first()
         serializer = ProjectStatusSerializer(latest_status)
         return Response(serializer.data)
-    
+
     @action(detail=False, methods=['get'], url_path='check-code')
     def check_code(self, request):
         code = request.query_params.get('code')
@@ -99,14 +108,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
 
 class ProjectStatusViewSet(viewsets.ModelViewSet):
-    queryset = ProjectStatus.objects.all()   
+    queryset = ProjectStatus.objects.all()
     serializer_class = ProjectStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project', 'phase', 'is_baseline', 'is_final']
 
     def get_queryset(self):
         qs = ProjectStatus.objects.all()
-        # Always bring responsibilities along
+        # eager load responsibilities + user relations for performance
         qs = qs.prefetch_related('responsibilities__responsible', 'responsibilities__deputy')
         project_id = self.request.query_params.get('project_id')
         if project_id:
@@ -114,17 +123,20 @@ class ProjectStatusViewSet(viewsets.ModelViewSet):
         return qs.order_by('-status_date')
 
     def get_permissions(self):
-        # keep read operations broadly available, restrict write to project managers / admins
-        if self.action in ['create', 'update', 'partial_update', 'destroy', 'save_baseline', 'save_final', 'clone_previous']:
+        # restrict write actions to project managers/admins (IsProjectManager permission)
+        if self.action in [
+            'create', 'update', 'partial_update', 'destroy',
+            'save_baseline', 'save_final', 'clone_previous'
+        ]:
             return [permissions.IsAuthenticated(), IsProjectManager()]
         return [permissions.IsAuthenticated()]
-    
+
     def perform_create(self, serializer):
         """
-        Create a ProjectStatus where:
-        - `project` is inferred from request.query_params['project_id']
-        - `created_by` is taken from request.user (no need for frontend to pass)
-        - `status_date` will be taken from the serializer data if provided, otherwise defaults to today
+        Create ProjectStatus:
+        - project inferred from ?project_id or request.data['project']
+        - created_by set to request.user
+        - status_date default to today if not provided
         """
         project_id = self.request.query_params.get('project_id') or self.request.data.get('project')
         if not project_id:
@@ -135,26 +147,24 @@ class ProjectStatusViewSet(viewsets.ModelViewSet):
         except Project.DoesNotExist:
             raise ValidationError({'project_id': 'Project not found.'})
 
-        # Let user pass status_date if desired; otherwise default to today.
         provided_status_date = serializer.validated_data.get('status_date', None)
         status_date = provided_status_date if provided_status_date else timezone.now().date()
 
         with transaction.atomic():
-            # We pass project and created_by explicitly to serializer.save()
-            status_obj = serializer.save(project=project, created_by=self.request.user, status_date=status_date)
+            serializer.save(project=project, created_by=self.request.user, status_date=status_date)
 
     @action(detail=True, methods=['post'])
     def save_baseline(self, request, pk=None):
-        status = self.get_object()
-        status.is_baseline = True
-        status.save()
+        status_obj = self.get_object()
+        status_obj.is_baseline = True
+        status_obj.save()
         return Response({'status': 'baseline saved'})
 
     @action(detail=True, methods=['post'])
     def save_final(self, request, pk=None):
-        status = self.get_object()
-        status.is_final = True
-        status.save()
+        status_obj = self.get_object()
+        status_obj.is_final = True
+        status_obj.save()
         return Response({'status': 'final status saved'})
 
     @action(detail=True, methods=['post'])
@@ -163,8 +173,11 @@ class ProjectStatusViewSet(viewsets.ModelViewSet):
         previous = current_status.project.statuses.filter(
             status_date__lt=current_status.status_date
         ).order_by('-status_date').first()
+
         if not previous:
             return Response({'error': 'No previous status found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_count = 0
         for resp in previous.responsibilities.all():
             Responsibility.objects.create(
                 project_status=current_status,
@@ -175,13 +188,15 @@ class ProjectStatusViewSet(viewsets.ModelViewSet):
                 progress=resp.progress,
                 comments=f"Cloned from {previous.status_date}"
             )
-        return Response({'status': 'previous responsibilities cloned'})
+            created_count += 1
+
+        return Response({'status': 'previous responsibilities cloned', 'created': created_count})
 
 
 class ResponsibilityViewSet(viewsets.ModelViewSet):
     queryset = Responsibility.objects.all()
     serializer_class = ResponsibilitySerializer
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['project_status', 'status', 'needs_escalation']
 
     def perform_update(self, serializer):
@@ -189,7 +204,15 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
         self._check_escalation(instance)
 
     def _check_escalation(self, responsibility):
-        if responsibility.tracker.has_changed('status') or responsibility.tracker.has_changed('needs_escalation'):
+        # relies on modeltracker / django-simple-history or similar to detect changes
+        try:
+            changed_status = getattr(responsibility, 'tracker', None) and responsibility.tracker.has_changed('status')
+            changed_escalation_flag = getattr(responsibility, 'tracker', None) and responsibility.tracker.has_changed('needs_escalation')
+            if changed_status or changed_escalation_flag:
+                if responsibility.status in ['Y', 'R'] or responsibility.needs_escalation:
+                    self._trigger_escalation(responsibility)
+        except Exception:
+            # fail safe: still try to trigger if conditions appear set
             if responsibility.status in ['Y', 'R'] or responsibility.needs_escalation:
                 self._trigger_escalation(responsibility)
 
@@ -199,9 +222,13 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
             reason=f"Automatic escalation triggered for {responsibility.title}",
             created_by=self.request.user
         )
-        recipients = [responsibility.responsible.email]
-        if responsibility.deputy:
+
+        recipients = []
+        if responsibility.responsible and getattr(responsibility.responsible, 'email', None):
+            recipients.append(responsibility.responsible.email)
+        if responsibility.deputy and getattr(responsibility.deputy, 'email', None):
             recipients.append(responsibility.deputy.email)
+
         subject = f"ESCALATION: {responsibility.project_status.project.name}"
         message = (
             f"Project: {responsibility.project_status.project.code} - "
@@ -211,13 +238,11 @@ class ResponsibilityViewSet(viewsets.ModelViewSet):
             f"Reason: {escalation.reason}\n"
             f"Please review: http://yourdomain.com/status/{responsibility.project_status.id}/"
         )
-        send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            recipients,
-            fail_silently=False,
-        )
+        if recipients:
+            try:
+                send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, recipients, fail_silently=False)
+            except Exception:
+                logger.exception("Failed to send escalation email")
 
 
 class EscalationViewSet(viewsets.ModelViewSet):
@@ -231,23 +256,14 @@ class EscalationViewSet(viewsets.ModelViewSet):
         escalation = self.get_object()
         escalation.resolve(request.user)
         return Response({'status': 'escalation resolved'})
-    
+
     @action(detail=False, methods=['get'])
     def by_project(self, request):
-        """
-        GET /api/escalations/by_project/?project=<id_or_code>&resolved=true|false
-
-        - `project` may be the numeric PK (id) or the project.code string.
-        - `resolved` optional filter accepts true/false (or 1/0).
-        - Supports DRF pagination if configured.
-        """
         project_q = request.query_params.get('project')
         if not project_q:
             return Response({"detail": "project query param required"}, status=status.HTTP_400_BAD_REQUEST)
 
         qs = self.get_queryset()
-
-        # If numeric, treat as project id, otherwise treat as project.code
         if str(project_q).isdigit():
             qs = qs.filter(responsibility__project_status__project__id=project_q)
         else:
@@ -260,18 +276,17 @@ class EscalationViewSet(viewsets.ModelViewSet):
             elif str(resolved).lower() in ('false', '0'):
                 qs = qs.filter(resolved=False)
 
-        # optional responsibility filter passthrough
         resp = request.query_params.get('responsibility')
         if resp:
             qs = qs.filter(responsibility__id=resp)
 
-        # pagination-aware response
-        page = self.paginate_queryset(qs)
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
         if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            serializer = self.get_serializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
 
-        serializer = self.get_serializer(qs, many=True)
+        serializer = self.get_serializer(qs, many=True, context={'request': request})
         return Response(serializer.data)
 
 
@@ -281,14 +296,36 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
+        # list & retrieve allowed for authenticated; other mutating actions limited to admins
+        if self.action in ['list', 'retrieve', 'me']:
             return [permissions.IsAuthenticated()]
         return [permissions.IsAdminUser()]
 
     @action(detail=False, methods=['get'])
     def me(self, request):
-        serializer = self.get_serializer(request.user)
+        serializer = self.get_serializer(request.user, context={'request': request})
         return Response(serializer.data)
+
+    @action(detail=False, methods=['put'], permission_classes=[permissions.IsAuthenticated], url_path='update_password')
+    def update_password(self, request):
+        """
+        PUT /api/users/update_password/
+        { current_password, new_password }
+        """
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        current_password = serializer.validated_data['current_password']
+        new_password = serializer.validated_data['new_password']
+
+        if not user.check_password(current_password):
+            return Response({'detail': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
+
 
 class ReportingViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
@@ -319,6 +356,7 @@ class ReportingViewSet(viewsets.ViewSet):
         user_id = request.query_params.get('user_id')
         if not user_id:
             return Response({'error': 'user_id parameter required'}, status=status.HTTP_400_BAD_REQUEST)
+
         responsibilities = Responsibility.objects.filter(
             Q(responsible_id=user_id) | Q(deputy_id=user_id)
         ).annotate(
@@ -335,15 +373,11 @@ class ReportingViewSet(viewsets.ViewSet):
     def escalation_report(self, request):
         """
         Escalation report:
-        Query params supported:
-          - resolved=true|false (filter on Escalation.resolved)
-          - include_resolved=true|false (alias for resolved)
-          - project=<id_or_code>
-          - date_from=YYYY-MM-DD (created_at >= date_from)
-          - date_to=YYYY-MM-DD (created_at <= date_to)
-          - responsibility=<responsibility_id>
-
-        Returns paginated response when pagination is enabled.
+         - resolved / include_resolved (true|false)
+         - project (id or code)
+         - date_from, date_to (YYYY-MM-DD)
+         - responsibility (id)
+        Returns paginated results when pagination is configured.
         """
         try:
             qs = Escalation.objects.select_related(
@@ -352,18 +386,15 @@ class ReportingViewSet(viewsets.ViewSet):
                 'resolved_by'
             ).order_by('-created_at')
 
-            # resolved / include_resolved: accept either param
-            resolved_param = request.query_params.get('resolved')
-            if resolved_param is None:
-                resolved_param = request.query_params.get('include_resolved')
-
+            # resolved / include_resolved
+            resolved_param = request.query_params.get('resolved') or request.query_params.get('include_resolved')
             if resolved_param is not None:
                 if str(resolved_param).lower() in ('true', '1'):
                     qs = qs.filter(resolved=True)
                 elif str(resolved_param).lower() in ('false', '0'):
                     qs = qs.filter(resolved=False)
 
-            # project filter: numeric id or project.code
+            # project filter
             project_q = request.query_params.get('project')
             if project_q:
                 if str(project_q).isdigit():
@@ -371,7 +402,7 @@ class ReportingViewSet(viewsets.ViewSet):
                 else:
                     qs = qs.filter(responsibility__project_status__project__code=project_q)
 
-            # date range filters for created_at (expects YYYY-MM-DD)
+            # date range
             date_from = request.query_params.get('date_from')
             date_to = request.query_params.get('date_to')
             try:
@@ -383,15 +414,13 @@ class ReportingViewSet(viewsets.ViewSet):
                 return Response({"detail": "Invalid date_from or date_to. Use YYYY-MM-DD."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            # optional responsibility passthrough
+            # responsibility passthrough
             resp = request.query_params.get('responsibility')
             if resp:
                 qs = qs.filter(responsibility__id=resp)
 
-            # LOG: show how many rows matching filters (helpful for debugging)
-            logger.debug("escalation_report query built; count = %d", qs.count())
+            logger.debug("escalation_report query built; count=%d", qs.count())
 
-            # Use DRF paginator + serializer for consistent output
             paginator = PageNumberPagination()
             page = paginator.paginate_queryset(qs, request, view=self)
             if page is not None:
@@ -400,60 +429,65 @@ class ReportingViewSet(viewsets.ViewSet):
 
             serializer = EscalationSerializer(qs, many=True, context={'request': request})
             return Response(serializer.data)
-
         except Exception:
-            logger.exception("Failed to build or return escalation_report")
-            return Response({'detail': 'Server error while building escalation report'}, status=500)
+            logger.exception("Failed to build escalation report")
+            return Response({'detail': 'Server error while building escalation report'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class PasswordResetRequestView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.AllowAny]
+
     def post(self, request):
         email = request.data.get('email')
         if not email:
-            return Response({'error': 'Email is required.'}, status=400)
+            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = CustomUser.objects.get(email=email)
         except CustomUser.DoesNotExist:
-            return Response({'message': 'If the email exists, a reset link will be sent.'}, status=200)
+            # Do not reveal existence of email
+            return Response({'message': 'If the email exists, a reset link will be sent.'}, status=status.HTTP_200_OK)
 
-        # Create or update token
         token = secrets.token_urlsafe(32)
         PasswordResetToken.objects.update_or_create(user=user, defaults={'token': token})
 
         reset_link = f'http://localhost:5173/reset-password?token={token}'
 
-        send_mail(
-            'Password Reset Request',
-            f'Click the link to reset your password:\n{reset_link}',
-            settings.DEFAULT_FROM_EMAIL,
-            [email],
-        )
+        try:
+            send_mail(
+                'Password Reset Request',
+                f'Click the link to reset your password:\n{reset_link}',
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+            )
+        except Exception:
+            logger.exception("Failed to send password reset email")
 
-        return Response({'message': 'If the email exists, a reset link will be sent.'}, status=200)
+        return Response({'message': 'If the email exists, a reset link will be sent.'}, status=status.HTTP_200_OK)
+
 
 class PasswordResetConfirmView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [permissions.AllowAny]
+
     def post(self, request):
         token = request.data.get('token')
         new_password = request.data.get('password')
 
         if not token or not new_password:
-            return Response({'error': 'Token and new password are required.'}, status=400)
+            return Response({'error': 'Token and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             reset_token = PasswordResetToken.objects.get(token=token)
         except PasswordResetToken.DoesNotExist:
-            return Response({'error': 'Invalid or expired token.'}, status=400)
+            return Response({'error': 'Invalid or expired token.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if reset_token.is_expired():
             reset_token.delete()
-            return Response({'error': 'Token has expired.'}, status=400)
+            return Response({'error': 'Token has expired.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = reset_token.user
         user.set_password(new_password)
         user.save()
 
         reset_token.delete()
-
-        return Response({'message': 'Password reset successful.'}, status=200)
+        return Response({'message': 'Password reset successful.'}, status=status.HTTP_200_OK)
