@@ -77,3 +77,19 @@ export const saveFinal = (statusId) =>
  */
 export const clonePrevious = (statusId) => 
   api.post(`/status/${statusId}/clone_previous/`);
+
+
+/**
+ * Fetch a single ProjectStatus by ID.
+ * GET /status/{id}/
+ */
+export const fetchStatusById = async (id) => {
+  // eslint-disable-next-line no-useless-catch
+  try {
+    const { data } = await api.get(`/status/${id}/`);
+    return data;
+  } catch (err) {
+    // rethrow so caller can detect 404 and fallback
+    throw err;
+  }
+};

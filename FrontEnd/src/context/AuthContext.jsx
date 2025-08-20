@@ -77,8 +77,37 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  /**
+   * Update user password
+   * @param {string} currentPassword - current password
+   * @param {string} newPassword - new password
+   */
+  const updatePassword = async (currentPassword, newPassword) => {
+    const token = localStorage.getItem('access_token');
+    if (!token) throw new Error("Not authenticated");
+
+    const response = await fetch('http://localhost:8000/api/users/update_password/', {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || "Failed to update password");
+    }
+
+    return await response.json();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, refreshToken, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshToken, updatePassword, loading }}>
       {children}
     </AuthContext.Provider>
   );

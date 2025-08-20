@@ -102,20 +102,6 @@ const DashboardPage = () => {
 
   return (
     <div className="min-h-screen max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-        <h1 className="text-xl font-bold text-gray-800">
-          Filter projects
-        </h1>
-        <button
-          onClick={() => navigate('/projects/new')}
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
-          type="button"
-        >
-          <Plus size={18} /> New Project
-        </button>
-      </div>
-
       {/* Filters */}
       <div className="flex flex-col md:flex-row items-end gap-4 mb-8 flex-wrap bg-white p-4 rounded-xl shadow-sm">
         <div className="flex-grow min-w-[220px]">

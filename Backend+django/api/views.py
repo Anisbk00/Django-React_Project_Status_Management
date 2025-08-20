@@ -14,6 +14,7 @@ from rest_framework.permissions import AllowAny
 import secrets
 from .models import PasswordResetToken
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 
 
 from .models import CustomUser, Project, ProjectStatus, Responsibility, Escalation
@@ -289,9 +290,8 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(request.user)
         return Response(serializer.data)
 
-
 class ReportingViewSet(viewsets.ViewSet):
-    permission_classes = [permissions.IsAuthenticated, IsProjectManager]
+    permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
         return Response({
@@ -333,16 +333,78 @@ class ReportingViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'])
     def escalation_report(self, request):
-        escalations = Escalation.objects.filter(resolved=False).annotate(
-            project_code=F('responsibility__project_status__project__code'),
-            responsibility_title=F('responsibility__title'),
-            created_by_name=F('created_by__username')
-        ).values(
-            'id', 'reason', 'created_at',
-            'project_code', 'responsibility_title', 'created_by_name'
-        )
-        return Response(list(escalations))
-    
+        """
+        Escalation report:
+        Query params supported:
+          - resolved=true|false (filter on Escalation.resolved)
+          - include_resolved=true|false (alias for resolved)
+          - project=<id_or_code>
+          - date_from=YYYY-MM-DD (created_at >= date_from)
+          - date_to=YYYY-MM-DD (created_at <= date_to)
+          - responsibility=<responsibility_id>
+
+        Returns paginated response when pagination is enabled.
+        """
+        try:
+            qs = Escalation.objects.select_related(
+                'responsibility__project_status__project',
+                'created_by',
+                'resolved_by'
+            ).order_by('-created_at')
+
+            # resolved / include_resolved: accept either param
+            resolved_param = request.query_params.get('resolved')
+            if resolved_param is None:
+                resolved_param = request.query_params.get('include_resolved')
+
+            if resolved_param is not None:
+                if str(resolved_param).lower() in ('true', '1'):
+                    qs = qs.filter(resolved=True)
+                elif str(resolved_param).lower() in ('false', '0'):
+                    qs = qs.filter(resolved=False)
+
+            # project filter: numeric id or project.code
+            project_q = request.query_params.get('project')
+            if project_q:
+                if str(project_q).isdigit():
+                    qs = qs.filter(responsibility__project_status__project__id=project_q)
+                else:
+                    qs = qs.filter(responsibility__project_status__project__code=project_q)
+
+            # date range filters for created_at (expects YYYY-MM-DD)
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            try:
+                if date_from:
+                    qs = qs.filter(created_at__date__gte=date_from)
+                if date_to:
+                    qs = qs.filter(created_at__date__lte=date_to)
+            except Exception:
+                return Response({"detail": "Invalid date_from or date_to. Use YYYY-MM-DD."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # optional responsibility passthrough
+            resp = request.query_params.get('responsibility')
+            if resp:
+                qs = qs.filter(responsibility__id=resp)
+
+            # LOG: show how many rows matching filters (helpful for debugging)
+            logger.debug("escalation_report query built; count = %d", qs.count())
+
+            # Use DRF paginator + serializer for consistent output
+            paginator = PageNumberPagination()
+            page = paginator.paginate_queryset(qs, request, view=self)
+            if page is not None:
+                serializer = EscalationSerializer(page, many=True, context={'request': request})
+                return paginator.get_paginated_response(serializer.data)
+
+            serializer = EscalationSerializer(qs, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        except Exception:
+            logger.exception("Failed to build or return escalation_report")
+            return Response({'detail': 'Server error while building escalation report'}, status=500)
+
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):

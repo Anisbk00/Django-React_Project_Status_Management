@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import { Menu, Transition } from '@headlessui/react';
 import { ChevronDownIcon, UserCircleIcon } from '@heroicons/react/24/solid'; // Added UserCircleIcon
 import { useAuth } from '../../context/AuthContext';
+import { Link } from "react-router-dom";
 
 const UserDropdown = () => {
   const { user, logout } = useAuth();
@@ -58,7 +59,7 @@ const UserDropdown = () => {
                     role="menuitem"
                     tabIndex={-1}
                     onClick={() => {
-                      /* add your Profile handler here */
+                      <Link to="/profile" className="hover:text-blue-500">Profile</Link>
                     }}
                   >
                     Profile
@@ -76,7 +77,7 @@ const UserDropdown = () => {
                     role="menuitem"
                     tabIndex={-1}
                     onClick={() => {
-                      /* add your Settings handler here */
+                      
                     }}
                   >
                     Settings
