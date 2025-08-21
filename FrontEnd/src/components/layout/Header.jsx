@@ -21,7 +21,7 @@ const Header = () => {
           </div>
 
           {/* Top navigation (hidden on very small screens) */}
-          <nav className="hidden sm:flex items-center space-x-1">
+          <nav className="hidden sm:flex items-center justify-center space-x-4">
             <NavLink
               to="/dashboard"
               className={({ isActive }) =>

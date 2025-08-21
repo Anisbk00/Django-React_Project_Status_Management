@@ -12,6 +12,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import NewProjectPage from './pages/NewProjectPage';
 import StatusReportPage from './pages/StatusReportPage'; // NEW
 import SettingsPage from "./pages/SettingsPage";
+import ProfilePage from './pages/ProfilePage';
 
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
               <Route path="/projects/new" element={<NewProjectPage />} />
 
               {/* project overview / latest status page */}
