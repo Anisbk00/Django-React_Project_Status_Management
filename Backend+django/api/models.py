@@ -140,15 +140,6 @@ class Notification(models.Model):
         return f"{self.get_notification_type_display()} - {self.user.username}"
     
 
-
-class PasswordResetToken(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
-    token = models.CharField(max_length=64, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def is_expired(self):
-        # Token expires after 1 hour
-        return timezone.now() > self.created_at + timedelta(hours=1)
     
 class PasswordResetToken(models.Model):
     user = models.OneToOneField('CustomUser', on_delete=models.CASCADE, related_name='password_reset_token')
